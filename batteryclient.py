@@ -12,6 +12,7 @@ TCP function codes:
 
 # Import Necessary Libraries for TCP client and Battery Server
 import socket
+import time
 from umodbus import conf
 from umodbus.client import tcp
 from batteryserver import Battery
@@ -30,6 +31,9 @@ if __name__ == '__main__':
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect(('localhost', 8080))
 
+    # Waits for Server
+    time.sleep(0.5)
+
     try:
         while True:
             print('\n\nTest Iteration = ' + str(it_num))
@@ -43,7 +47,7 @@ if __name__ == '__main__':
 
                 read = tcp.read_holding_registers(slave_id=1, starting_address=19, quantity=1)
                 response = tcp.send_message(read, sock)
-                print(response)
+                print('\nSOC is Currently at: ' + str(response[0]) + ' Percent')
 
             # Predicts New SOC and Adds to Data Store
             elif TestInput == '2':
@@ -56,10 +60,10 @@ if __name__ == '__main__':
 
             # Reads from Server using SunSpec
             elif TestInput == '3':
-                print('To be implemented')
+                print('\nTo be implemented')
 
             else:
-                raise ValueError('Must be a number between 1-3')
+                print('\nMust be a number between 1-3')
 
             it_num += 1
 

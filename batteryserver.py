@@ -38,13 +38,11 @@ class Server:
         # Server read function
         @self.app.route(slave_ids=[1], function_codes=[3, 4, 6, 16], addresses=list(range(0, 34)))
         def read_data_store(slave_id, function_code, address):
-            print('read')
             return self.data_store[address]
 
         # Server write function
         @self.app.route(slave_ids=[1], function_codes=[6, 16], addresses=list(range(0, 34)))
         def write_data_store(slave_id, function_code, address, value):
-            print('write')
             self.data_store[address] = value
 
         # Starting server in background thread

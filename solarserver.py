@@ -11,13 +11,12 @@ TCP function codes:
     16 = write multiple holding registers
 '''
 
-import csv
+# Import Necessary Libraries for TCP server
 import logging
 import threading
 from collections import defaultdict
 from socketserver import TCPServer
 
-import numpy as np
 from umodbus import conf
 from umodbus.server.tcp import RequestHandler, get_server
 from umodbus.utils import log_to_stream
@@ -36,7 +35,7 @@ class Server:
 
         # Creates TCP Server
         TCPServer.allow_reuse_address = True
-        self.app = get_server(TCPServer, ('127.0.0.1', 8080), RequestHandler)
+        self.app = get_server(TCPServer, ('127.0.0.1', 8081), RequestHandler)
 
         # Server read function
         @self.app.route(slave_ids=[1], function_codes=[3, 4, 6, 16], addresses=list(range(0, 34)))
@@ -49,8 +48,8 @@ class Server:
             self.data_store[address] = value
 
         # Starting server in background thread
-        self.thread = threading.Thread(target=self._thread)
-        self.thread.start()
+        Server.thread = threading.Thread(target=self._thread)
+        Server.thread.start()
 
     def _thread(self):
         try:
@@ -59,19 +58,18 @@ class Server:
         finally:
             self.app.shutdown()
             self.app.server_close()
-            self.thread = None
+            Server.thread = None
 
 
-class Battery:
-    def __init__(self, battery_data):
+class Solar:
+    def __init__(self):
         # Server Instance
         self.server = Server()
 
         # Sets Initial Values
-        self.SOC = 50
-        self.dt = len(battery_data)/24  # Hours
+        self.power = 50
+        self.dt = 0.1
         self.bat_cap = 5
-
         self.server.data_store[0] = 803
         self.server.data_store[1] = 16
         self.server.data_store[19] = 50

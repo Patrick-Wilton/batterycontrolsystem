@@ -1,5 +1,1 @@
-
-
-'''
-For implementing a more complex and robust battery model later on
-'''
+# For a more complex battery model

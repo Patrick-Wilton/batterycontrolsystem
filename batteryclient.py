@@ -12,23 +12,26 @@ TCP function codes:
 
 # Import Necessary Libraries for TCP client and Battery Server
 import csv
-import socket
 import time
+import numpy as np
 
 from sunspec.core.client import ClientDevice
-from umodbus import conf
-from umodbus.client import tcp
+from matplotlib.pyplot import
 
-from batteryserver import Battery
+from batteryserver import Battery, Solar, House
 
 
 class Data:
     def __init__(self):
         self.battery_data = []
+        self.solar_data = []
+        self.house_data = []
         with open('one_day_export.csv', mode='r') as csv_file:
             self.csv_reader = csv.DictReader(csv_file)
             for row in self.csv_reader:
-                self.battery_data.append(row["abatteryp"])
+                self.battery_data.append(int((float(row["abatteryp"])*1000)))
+                self.solar_data.append(int(float(row["asolarp"])*1000))
+                self.house_data.append(int(float(row["aloadp"])*1000))
 
 
 if __name__ == '__main__':
@@ -37,50 +40,22 @@ if __name__ == '__main__':
     it_num = 1
     data = Data()
     battery = Battery(data.battery_data)
+    solar = Solar(data.solar_data)
+    house = House(data.house_data)
 
-    sun_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
+    battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
+    solar_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8081)
+    house_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8082)
 
-    # Enable values to be signed (default is False).
-    conf.SIGNED_VALUES = True
+    static_reference = 0
 
-    # Waits for Server
+    # Waits for Servers
     time.sleep(0.5)
 
-    while True:
-        print('\n\nTest Iteration = ' + str(it_num))
+    # Main for loop
+    for dt in range(len(data.battery_data)):
+        solar_decode = solar_client.read(0, 1)
+        solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
+        print(solar_value)
 
-        # Reads User Input
-        TestInput = input('\nTest Options \n1 = Read Registers\n2 = Calculate New SOC\n'
-                          '3 = Read SunSpec Model\nInput Number: ')
 
-        # Reads SOC from Server
-        if TestInput == '1':
-            # Connects To Server
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(('localhost', 8080))
-
-            read = tcp.read_holding_registers(slave_id=1, starting_address=19, quantity=1)
-            response = tcp.send_message(read, sock)
-            print('\nSOC is Currently at: ' + str(response[0]) + ' Percent')
-
-            # Closes Server
-            sock.close()
-
-        # Predicts New SOC and Adds to Data Store
-        elif TestInput == '2':
-            charge_str = input('\nInput the Charge (A)(+-): ')
-            time_str = input('\nInput the Time the Charge is Applied (Hours): ')
-            charge = float(charge_str)
-            time = float(time_str)
-
-            new_soc = battery.predict_soc(charge, time)
-
-        # Reads from Server using SunSpec
-        elif TestInput == '3':
-            A = sun_client.read(19, 1)
-            sun_spec_soc = int.from_bytes(A, byteorder='big')
-            print('\nSOC is Currently at: ' + str(sun_spec_soc) + ' Percent')
-
-        else:
-            print('\nMust be a number between 1-3')
-        it_num += 1

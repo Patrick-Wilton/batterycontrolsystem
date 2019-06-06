@@ -13,12 +13,12 @@ TCP function codes:
 # Import Necessary Libraries for TCP client and Battery Server
 import csv
 import time
+import zmq
+
 import numpy as np
-
 from sunspec.core.client import ClientDevice
-from matplotlib.pyplot import
 
-from batteryserver import Battery, Solar, House
+from simulation_servers import Battery, Solar, House, Timing
 
 
 class Data:
@@ -36,12 +36,12 @@ class Data:
 
 if __name__ == '__main__':
 
-    # Initialises Test Number and Battery Server
-    it_num = 1
+    # Initialises Classes
     data = Data()
     battery = Battery(data.battery_data)
     solar = Solar(data.solar_data)
     house = House(data.house_data)
+    publisher = Timing()
 
     battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
     solar_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8081)
@@ -56,6 +56,6 @@ if __name__ == '__main__':
     for dt in range(len(data.battery_data)):
         solar_decode = solar_client.read(0, 1)
         solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
-        print(solar_value)
+        # print(solar_value)
 
 

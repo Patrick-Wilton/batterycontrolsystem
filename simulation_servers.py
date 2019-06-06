@@ -13,13 +13,44 @@ TCP function codes:
 
 import logging
 import threading
+import time
+import zmq
 from collections import defaultdict
 from socketserver import TCPServer
-import numpy as np
 
+import numpy as np
 from umodbus import conf
 from umodbus.server.tcp import RequestHandler, get_server
 from umodbus.utils import log_to_stream
+
+
+class Timing:
+    def __init__(self):
+        self.init_time = time.time()
+        self.time_scale = 8000
+        self.total_time = (24/self.time_scale)*3600
+        self.end_time = self.init_time + self.total_time
+        print((24/self.time_scale)*3600)
+        self.pub_interval = 5  # minutes
+        self.pub_interval = self.total_time/(24*(60/self.pub_interval))
+
+        self.port = "8090"
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PUB)
+        self.socket.bind("tcp://*:%s" % self.port)
+        print("pub start")
+        self.thread = threading.Thread(target=self.publish)
+        self.thread.start()
+
+    def publish(self):
+        while time.time() < self.end_time:
+            topic = 1
+            message_data = 2
+            self.socket.send_string("%d %d" % (topic, message_data))
+            time.sleep(self.pub_interval)
+            print("publishing")
+        print("DONE")
+        self.thread = None
 
 
 class BatteryServer:

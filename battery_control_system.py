@@ -1,61 +1,78 @@
-# TCP Modbus client and parts of code from open source: 'uModbus'
 
-# TODO: Add SunSpec read capabilities
-
-'''
-TCP function codes:
-    3 = read holding registers
-    4 = read input registers
-    6 = write single holding register
-    16 = write multiple holding registers
-'''
-
-# Import Necessary Libraries for TCP client and Battery Server
-import csv
-import time
 import zmq
-
-import numpy as np
-from sunspec.core.client import ClientDevice
-
-from simulation_servers import Battery, Solar, House, Timing
-
-
-class Data:
-    def __init__(self):
-        self.battery_data = []
-        self.solar_data = []
-        self.house_data = []
-        with open('one_day_export.csv', mode='r') as csv_file:
-            self.csv_reader = csv.DictReader(csv_file)
-            for row in self.csv_reader:
-                self.battery_data.append(int((float(row["abatteryp"])*1000)))
-                self.solar_data.append(int(float(row["asolarp"])*1000))
-                self.house_data.append(int(float(row["aloadp"])*1000))
-
+import time
 
 if __name__ == '__main__':
 
-    # Initialises Classes
-    data = Data()
-    battery = Battery(data.battery_data)
-    solar = Solar(data.solar_data)
-    house = House(data.house_data)
-    publisher = Timing()
+    # ZeroMQ Subscribing
+    sub_port = "8090"
+    battery_topic = "0"
+    solar_topic = "1"
+    house_topic = "2"
+    sub_context = zmq.Context()
 
-    battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
-    solar_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8081)
-    house_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8082)
+    bat_socket = sub_context.socket(zmq.SUB)
+    bat_socket.connect("tcp://localhost:%s" % sub_port)
+    bat_socket.connect("tcp://localhost:%s" % sub_port)
+    bat_socket.setsockopt_string(zmq.SUBSCRIBE, battery_topic)
 
-    static_reference = 0
+    solar_socket = sub_context.socket(zmq.SUB)
+    solar_socket.connect("tcp://localhost:%s" % sub_port)
+    solar_socket.connect("tcp://localhost:%s" % sub_port)
+    solar_socket.setsockopt_string(zmq.SUBSCRIBE, solar_topic)
 
-    # Waits for Servers
-    time.sleep(0.5)
+    house_socket = sub_context.socket(zmq.SUB)
+    house_socket.connect("tcp://localhost:%s" % sub_port)
+    house_socket.connect("tcp://localhost:%s" % sub_port)
+    house_socket.setsockopt_string(zmq.SUBSCRIBE, house_topic)
 
-    # Main for loop
-    for dt in range(len(data.battery_data)):
-        solar_decode = solar_client.read(0, 1)
-        solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
-        # print(solar_value)
+    # ZeroMQ Publishing
+    pub_port = "8091"
+    pub_topic = 0
+    pub_context = zmq.Context()
+    pub_socket = pub_context.socket(zmq.PUB)
+    pub_socket.bind("tcp://*:%s" % pub_port)
+
+    # Sets Initial Values
+    prev_power = 0
+    time_interval = 5  # minutes
+    time_interval = 1/(60/time_interval)
+
+    print('Starting Control System')
+    while True:
+        # Subscribing
+        bat_string = bat_socket.recv()
+        solar_string = solar_socket.recv()
+        house_string = house_socket.recv()
+
+        # Obtains Battery SOC
+        b_topic, bat_SOC = bat_string.split()
+        bat_SOC = int(bat_SOC)
+        print('BATTERY')
+        print(bat_SOC)
+
+        # Obtains Solar Power
+        s_topic, solar_power = solar_string.split()
+        solar_power = int(solar_power)
+        print('SOLAR')
+        print(solar_power)
+
+        # Obtains House Load
+        h_topic, house_power = house_string.split()
+        house_power = int(house_power)
+        print('HOUSE')
+        print(house_power)
+
+        # Data Filtering
+
+        # Control System
+        grid = prev_power + solar_power + house_power
+        bat_power = -grid
+        prev_power = bat_power
+
+        # Publishing
+        pub_socket.send_string("%d %d" % (pub_topic, bat_power))
+        time.sleep(1)
+
 
 

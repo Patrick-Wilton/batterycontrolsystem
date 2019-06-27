@@ -187,6 +187,3 @@ class House:
             self.app.server_close()
             self.thread = None
 
-
-
-

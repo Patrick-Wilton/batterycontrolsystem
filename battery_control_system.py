@@ -1,30 +1,83 @@
 
 import zmq
 import time
+import threading
+
+
+class Subscriber:
+    def __init__(self):
+
+        self.battery_read = 0
+        self.solar_read = 0
+        self.house_read = 0
+
+        # ZeroMQ Subscribing
+        sub_port = "8090"
+        battery_topic = "0"
+        solar_topic = "1"
+        house_topic = "2"
+        sub_context = zmq.Context()
+
+        self.bat_socket = sub_context.socket(zmq.SUB)
+        self.bat_socket.connect("tcp://localhost:%s" % sub_port)
+        self.bat_socket.connect("tcp://localhost:%s" % sub_port)
+        self.bat_socket.setsockopt_string(zmq.SUBSCRIBE, battery_topic)
+
+        self.solar_socket = sub_context.socket(zmq.SUB)
+        self.solar_socket.connect("tcp://localhost:%s" % sub_port)
+        self.solar_socket.connect("tcp://localhost:%s" % sub_port)
+        self.solar_socket.setsockopt_string(zmq.SUBSCRIBE, solar_topic)
+
+        self.house_socket = sub_context.socket(zmq.SUB)
+        self.house_socket.connect("tcp://localhost:%s" % sub_port)
+        self.house_socket.connect("tcp://localhost:%s" % sub_port)
+        self.house_socket.setsockopt_string(zmq.SUBSCRIBE, house_topic)
+
+        # Starts Battery Sub Thread
+        print('starting battery SOC subscriber')
+        self.bat_thread = threading.Thread(target=self.battery_subscriber)
+        self.bat_thread.start()
+
+        # Starts Solar Sub Thread
+        print('starting solar subscriber')
+        self.solar_thread = threading.Thread(target=self.solar_subscriber)
+        self.solar_thread.start()
+
+        # Starts House Sub Thread
+        print('starting house subscriber')
+        self.house_thread = threading.Thread(target=self.house_subscriber)
+        self.house_thread.start()
+
+    def battery_subscriber(self):
+        while True:
+            bat_string = self.bat_socket.recv()
+            self.b_topic, self.bat_SOC = bat_string.split()
+            self.bat_SOC = int(self.bat_SOC)
+            # print('BATTERY')
+            # print(self.bat_SOC)
+            self.battery_read = 1
+
+    def solar_subscriber(self):
+        while True:
+            solar_string = self.solar_socket.recv()
+            self.s_topic, self.solar_power = solar_string.split()
+            self.solar_power = int(self.solar_power)
+            # print('SOLAR')
+            # print(self.solar_power)
+            self.solar_read = 1
+
+    def house_subscriber(self):
+        while True:
+            house_string = self.house_socket.recv()
+            self.h_topic, self.house_power = house_string.split()
+            self.house_power = int(self.house_power)
+            print('HOUSE')
+            print(self.house_power)
+            self.house_read = 1
+
+
 
 if __name__ == '__main__':
-
-    # ZeroMQ Subscribing
-    sub_port = "8090"
-    battery_topic = "0"
-    solar_topic = "1"
-    house_topic = "2"
-    sub_context = zmq.Context()
-
-    bat_socket = sub_context.socket(zmq.SUB)
-    bat_socket.connect("tcp://localhost:%s" % sub_port)
-    bat_socket.connect("tcp://localhost:%s" % sub_port)
-    bat_socket.setsockopt_string(zmq.SUBSCRIBE, battery_topic)
-
-    solar_socket = sub_context.socket(zmq.SUB)
-    solar_socket.connect("tcp://localhost:%s" % sub_port)
-    solar_socket.connect("tcp://localhost:%s" % sub_port)
-    solar_socket.setsockopt_string(zmq.SUBSCRIBE, solar_topic)
-
-    house_socket = sub_context.socket(zmq.SUB)
-    house_socket.connect("tcp://localhost:%s" % sub_port)
-    house_socket.connect("tcp://localhost:%s" % sub_port)
-    house_socket.setsockopt_string(zmq.SUBSCRIBE, house_topic)
 
     # ZeroMQ Publishing
     pub_port = "8091"
@@ -39,40 +92,26 @@ if __name__ == '__main__':
     time_interval = 1/(60/time_interval)
 
     print('Starting Control System')
+    sub = Subscriber()
     while True:
-        # Subscribing
-        bat_string = bat_socket.recv()
-        solar_string = solar_socket.recv()
-        house_string = house_socket.recv()
+        if sub.battery_read == 1 & sub.solar_read == 1 & sub.house_read == 1:
+            print('STEP')
+            bat = sub.bat_SOC
+            solar = sub.solar_power
+            house = sub.house_power
 
-        # Obtains Battery SOC
-        b_topic, bat_SOC = bat_string.split()
-        bat_SOC = int(bat_SOC)
-        print('BATTERY')
-        print(bat_SOC)
+            # Data Filtering
 
-        # Obtains Solar Power
-        s_topic, solar_power = solar_string.split()
-        solar_power = int(solar_power)
-        print('SOLAR')
-        print(solar_power)
+            # Control System
+            grid = prev_power + solar + house
+            bat_power = -grid
+            prev_power = bat_power
 
-        # Obtains House Load
-        h_topic, house_power = house_string.split()
-        house_power = int(house_power)
-        print('HOUSE')
-        print(house_power)
+            time.sleep(1)
 
-        # Data Filtering
+            # Publishing
+            pub_socket.send_string("%d %d" % (pub_topic, bat_power))
 
-        # Control System
-        grid = prev_power + solar_power + house_power
-        bat_power = -grid
-        prev_power = bat_power
-
-        # Publishing
-        pub_socket.send_string("%d %d" % (pub_topic, bat_power))
-        time.sleep(1)
 
 
 

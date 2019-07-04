@@ -35,7 +35,7 @@ class Battery:
         self.app = get_server(TCPServer, ('127.0.0.1', 8080), RequestHandler)
 
         # Server read function
-        @self.app.route(slave_ids=[1], function_codes=[3, 4, 6, 16], addresses=list(range(0, 34)))
+        @self.app.route(slave_ids=[1], function_codes=[3, 4], addresses=list(range(0, 34)))
         def read_data_store(slave_id, function_code, address):
             return self.data_store[address]
 
@@ -116,7 +116,7 @@ class Solar:
         self.data_count = 0
 
         # Server read function
-        @self.app.route(slave_ids=[1], function_codes=[3, 4, 6, 16], addresses=list(range(0, 1)))
+        @self.app.route(slave_ids=[1], function_codes=[3, 4], addresses=list(range(0, 1)))
         def read_data_store(slave_id, function_code, address):
             self.data_store[0] = self.solar_data[self.data_count]
             if self.data_count == len(self.solar_data) - 1:
@@ -161,7 +161,7 @@ class House:
         self.data_count = 0
 
         # Server read function
-        @self.app.route(slave_ids=[1], function_codes=[3, 4, 6, 16], addresses=list(range(0, 1)))
+        @self.app.route(slave_ids=[1], function_codes=[3, 4], addresses=list(range(0, 1)))
         def read_data_store(slave_id, function_code, address):
             self.data_store[0] = self.house_data[self.data_count]
             if self.data_count == len(self.house_data) - 1:

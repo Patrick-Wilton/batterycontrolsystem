@@ -1,4 +1,5 @@
 import csv
+import struct
 import threading
 import time
 from _thread import get_ident
@@ -6,9 +7,6 @@ from _thread import get_ident
 import numpy as np
 import zmq
 from sunspec.core.client import ClientDevice
-import socket
-from umodbus import conf
-from umodbus.client import tcp
 
 from simulation_servers import Battery, Solar, House
 
@@ -167,10 +165,6 @@ class SunSpecDriver:
     def battery_subscriber(self):
         self.sub_socket.connect("tcp://localhost:%s" % self.sub_port)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, self.batteryW_topic)
-        # uModbus Setup
-        conf.SIGNED_VALUES = True
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect(('localhost', 8080))
         while True:
             # Power Value Subscribing
             power_string = self.sub_socket.recv()
@@ -180,16 +174,12 @@ class SunSpecDriver:
             print(bat_power)
 
             # Write to Battery Server
-            #self.battery_client.write(3, 154)
-            message = tcp.write_multiple_registers(slave_id=1, starting_address=3, values=[bat_power])
-            tcp.send_message(message, self.sock)
+            self.battery_client.write(3, struct.pack(">h", bat_power))
 
             # Sets to read new values from servers
             self.battery_connect = 1
             self.solar_connect = 1
             self.house_connect = 1
-
-            self.sock.close()
 
 
 if __name__ == '__main__':

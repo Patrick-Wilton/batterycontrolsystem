@@ -6,6 +6,9 @@ from _thread import get_ident
 import numpy as np
 import zmq
 from sunspec.core.client import ClientDevice
+import socket
+from umodbus import conf
+from umodbus.client import tcp
 
 from simulation_servers import Battery, Solar, House
 
@@ -37,24 +40,35 @@ class Event:
         self.events[get_ident()][0].clear()
 
 
-class SunSpecDriver:
+class Servers:
     def __init__(self):
 
         # Setting up Data
-        battery_data = []
-        solar_data = []
-        house_data = []
+        self.battery_data = []
+        self.solar_data = []
+        self.house_data = []
+
+        # Servers Variables
+        self.battery = None
+        self.solar = None
+        self.house = None
+
+        # Reading CSV File
         with open('one_day_export.csv', mode='r') as csv_file:
             csv_reader = csv.DictReader(csv_file)
             for row in csv_reader:
-                battery_data.append(int((float(row["abatteryp"]) * 1000)))
-                solar_data.append(int(float(row["asolarp"]) * 1000))
-                house_data.append(int(float(row["aloadp"]) * 1000))
+                self.battery_data.append(int((float(row["abatteryp"]) * 1000)))
+                self.solar_data.append(int(float(row["asolarp"]) * 1000))
+                self.house_data.append(int(float(row["aloadp"]) * 1000))
 
-        # Creating Servers
-        self.battery = Battery(battery_data)
-        self.solar = Solar(solar_data)
-        self.house = House(house_data)
+    def start(self):
+        self.battery = Battery(self.battery_data)
+        self.solar = Solar(self.solar_data)
+        self.house = House(self.house_data)
+
+
+class SunSpecDriver:
+    def __init__(self):
 
         # Connecting SunSpec Clients
         self.battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
@@ -68,13 +82,19 @@ class SunSpecDriver:
         self.event = Event()
 
         # ZeroMQ Publishing
-        self.pub_port = "8090"
+        self.bat_port = "8090"
+        self.solar_port = "8091"
+        self.house_port = "8092"
         self.batterySOC_topic = 0
-        self.solar_topic = 1
-        self.house_topic = 2
+        self.solar_topic = 0
+        self.house_topic = 0
         self.context = zmq.Context()
-        self.pub_socket = self.context.socket(zmq.PUB)
-        self.pub_socket.bind("tcp://*:%s" % self.pub_port)
+        self.bat_socket = self.context.socket(zmq.PUB)
+        self.bat_socket.bind("tcp://*:%s" % self.bat_port)
+        self.solar_socket = self.context.socket(zmq.PUB)
+        self.solar_socket.bind("tcp://*:%s" % self.solar_port)
+        self.house_socket = self.context.socket(zmq.PUB)
+        self.house_socket.bind("tcp://*:%s" % self.house_port)
 
         # Connection Variables
         self.battery_connect = 1
@@ -82,8 +102,8 @@ class SunSpecDriver:
         self.house_connect = 1
 
         # ZeroMQ Subscribing
-        self.sub_port = "8091"
-        self.batteryW_topic = 1
+        self.sub_port = "8093"
+        self.batteryW_topic = "0"
         self.sub_socket = self.context.socket(zmq.SUB)
 
         # Starts Battery SOC Driver Thread
@@ -116,7 +136,7 @@ class SunSpecDriver:
                 print(soc_value)
                 self.battery_connect = 0
             else:
-                self.pub_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
+                self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
 
     def solar_publisher(self):
         while True:
@@ -128,25 +148,29 @@ class SunSpecDriver:
                 print(solar_value)
                 self.solar_connect = 0
             else:
-                self.pub_socket.send_string("%d %d" % (self.solar_topic, solar_value))
+                self.solar_socket.send_string("%d %d" % (self.solar_topic, solar_value))
 
     def house_publisher(self):
         while True:
+            if self.house_connect == 1:
                 # SunSpec Reading and Decoding
                 house_decode = self.house_client.read(0, 1)
+                print(house_decode)
                 house_value = np.int16(int.from_bytes(house_decode, byteorder='big'))
 
                 print('HOUSE')
                 print(house_value)
-
-                self.pub_socket.send_string("%d %d" % (self.house_topic, house_value))
-
-                self.event.wait()
-                self.event.clear()
+                self.house_connect = 0
+            else:
+                self.house_socket.send_string("%d %d" % (self.house_topic, house_value))
 
     def battery_subscriber(self):
         self.sub_socket.connect("tcp://localhost:%s" % self.sub_port)
-        self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "0")
+        self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, self.batteryW_topic)
+        # uModbus Setup
+        conf.SIGNED_VALUES = True
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect(('localhost', 8080))
         while True:
             # Power Value Subscribing
             power_string = self.sub_socket.recv()
@@ -156,16 +180,25 @@ class SunSpecDriver:
             print(bat_power)
 
             # Write to Battery Server
-            self.battery.predict_soc(bat_power)
+            #self.battery_client.write(3, 154)
+            message = tcp.write_multiple_registers(slave_id=1, starting_address=3, values=[bat_power])
+            tcp.send_message(message, self.sock)
 
             # Sets to read new values from servers
-            self.event.set()
             self.battery_connect = 1
             self.solar_connect = 1
-            #self.house_connect = 1
+            self.house_connect = 1
+
+            self.sock.close()
 
 
 if __name__ == '__main__':
+
+    # Starting Server Simulations
+    servers = Servers()
+    servers.start()
+
+    time.sleep(1)
 
     # Starting SunSpec Driver
     sun_spec_driver = SunSpecDriver()

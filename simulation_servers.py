@@ -19,8 +19,8 @@ from umodbus.server.tcp import RequestHandler, get_server
 from umodbus.utils import log_to_stream
 
 
-class BatteryServer:
-    def __init__(self):
+class Battery:
+    def __init__(self, battery_data):
         # Initialises Data Store
         self.data_store = defaultdict(int)
 
@@ -43,25 +43,12 @@ class BatteryServer:
         @self.app.route(slave_ids=[1], function_codes=[6, 16], addresses=list(range(0, 34)))
         def write_data_store(slave_id, function_code, address, value):
             self.data_store[address] = value
+            if address == 3:
+                self.predict_soc(value)
 
         # Starting server in background thread
         self.thread = threading.Thread(target=self._thread)
         self.thread.start()
-
-    def _thread(self):
-        try:
-            print('starting battery server')
-            self.app.serve_forever()
-        finally:
-            self.app.shutdown()
-            self.app.server_close()
-            self.thread = None
-
-
-class Battery:
-    def __init__(self, battery_data):
-        # Server Instance
-        self.bat_server = BatteryServer()
 
         # Sets Initial Values
         self.initial_soc = 50
@@ -69,13 +56,13 @@ class Battery:
         self.dt = 24/len(battery_data)  # Hours
         self.bat_cap = np.trapz(battery_data[0:int(len(battery_data)/2)], dx=self.dt)  # Wh
 
-        self.bat_server.data_store[0] = 803
-        self.bat_server.data_store[1] = 16
-        self.bat_server.data_store[19] = self.initial_soc
+        self.data_store[0] = 803
+        self.data_store[1] = 16
+        self.data_store[19] = self.initial_soc
 
     def set_value(self, new_soc):
         self.SOC = new_soc
-        self.bat_server.data_store[19] = int(new_soc)
+        self.data_store[19] = int(new_soc)
 
     def return_value(self):
         return self.SOC
@@ -95,6 +82,15 @@ class Battery:
 
         self.set_value(new_soc)
         return new_soc
+
+    def _thread(self):
+        try:
+            print('starting battery server')
+            self.app.serve_forever()
+        finally:
+            self.app.shutdown()
+            self.app.server_close()
+            self.thread = None
 
 
 class Solar:

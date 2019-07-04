@@ -12,25 +12,24 @@ class Subscriber:
         self.house_read = 0
 
         # ZeroMQ Subscribing
-        sub_port = "8090"
+        bat_port = "8090"
+        solar_port = "8091"
+        house_port = "8092"
         battery_topic = "0"
-        solar_topic = "1"
-        house_topic = "2"
+        solar_topic = "0"
+        house_topic = "0"
         sub_context = zmq.Context()
 
         self.bat_socket = sub_context.socket(zmq.SUB)
-        self.bat_socket.connect("tcp://localhost:%s" % sub_port)
-        self.bat_socket.connect("tcp://localhost:%s" % sub_port)
+        self.bat_socket.connect("tcp://localhost:%s" % bat_port)
         self.bat_socket.setsockopt_string(zmq.SUBSCRIBE, battery_topic)
 
         self.solar_socket = sub_context.socket(zmq.SUB)
-        self.solar_socket.connect("tcp://localhost:%s" % sub_port)
-        self.solar_socket.connect("tcp://localhost:%s" % sub_port)
+        self.solar_socket.connect("tcp://localhost:%s" % solar_port)
         self.solar_socket.setsockopt_string(zmq.SUBSCRIBE, solar_topic)
 
         self.house_socket = sub_context.socket(zmq.SUB)
-        self.house_socket.connect("tcp://localhost:%s" % sub_port)
-        self.house_socket.connect("tcp://localhost:%s" % sub_port)
+        self.house_socket.connect("tcp://localhost:%s" % house_port)
         self.house_socket.setsockopt_string(zmq.SUBSCRIBE, house_topic)
 
         # Starts Battery Sub Thread
@@ -53,8 +52,8 @@ class Subscriber:
             bat_string = self.bat_socket.recv()
             self.b_topic, self.bat_SOC = bat_string.split()
             self.bat_SOC = int(self.bat_SOC)
-            # print('BATTERY')
-            # print(self.bat_SOC)
+            print('BATTERY')
+            print(self.bat_SOC)
             self.battery_read = 1
 
     def solar_subscriber(self):
@@ -62,8 +61,8 @@ class Subscriber:
             solar_string = self.solar_socket.recv()
             self.s_topic, self.solar_power = solar_string.split()
             self.solar_power = int(self.solar_power)
-            # print('SOLAR')
-            # print(self.solar_power)
+            print('SOLAR')
+            print(self.solar_power)
             self.solar_read = 1
 
     def house_subscriber(self):
@@ -76,11 +75,10 @@ class Subscriber:
             self.house_read = 1
 
 
-
 if __name__ == '__main__':
 
     # ZeroMQ Publishing
-    pub_port = "8091"
+    pub_port = "8093"
     pub_topic = 0
     pub_context = zmq.Context()
     pub_socket = pub_context.socket(zmq.PUB)
@@ -111,6 +109,11 @@ if __name__ == '__main__':
 
             # Publishing
             pub_socket.send_string("%d %d" % (pub_topic, bat_power))
+
+            # Reset Reads
+            sub.battery_read = 0
+            sub.solar_read = 0
+            sub.house_read = 0
 
 
 

@@ -76,8 +76,10 @@ class SunSpecDriver:
         # Waits for Servers
         time.sleep(0.5)
 
-        # Event Class
-        self.event = Event()
+        # Event Classes
+        self.bat_event = Event()
+        self.solar_event = Event()
+        self.house_event = Event()
 
         # ZeroMQ Publishing
         self.bat_port = "8090"
@@ -125,61 +127,86 @@ class SunSpecDriver:
         self.bat_sub_thread.start()
 
     def battery_publisher(self):
+        # SunSpec Reading and Decoding
+        battery_soc_decode = self.battery_client.read(19, 1)
+        soc_value = np.int16(int.from_bytes(battery_soc_decode, byteorder='big'))
+
         while True:
             if self.battery_connect == 1:
+                self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
+            else:
                 # SunSpec Reading and Decoding
                 battery_soc_decode = self.battery_client.read(19, 1)
                 soc_value = np.int16(int.from_bytes(battery_soc_decode, byteorder='big'))
-                print('SOC')
-                print(soc_value)
-                self.battery_connect = 0
-            else:
+
                 self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
 
+                self.bat_event.wait()
+                self.bat_event.clear()
+
     def solar_publisher(self):
+        # SunSpec Reading and Decoding
+        solar_decode = self.solar_client.read(0, 1)
+        solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
+
         while True:
             if self.solar_connect == 1:
+                self.solar_socket.send_string("%d %d" % (self.solar_topic, solar_value))
+            else:
                 # SunSpec Reading and Decoding
                 solar_decode = self.solar_client.read(0, 1)
                 solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
-                print('SOLAR')
-                print(solar_value)
-                self.solar_connect = 0
-            else:
+
                 self.solar_socket.send_string("%d %d" % (self.solar_topic, solar_value))
 
+                self.solar_event.wait()
+                self.solar_event.clear()
+
     def house_publisher(self):
+        # SunSpec Reading and Decoding
+        house_decode = self.house_client.read(0, 1)
+        house_value = np.int16(int.from_bytes(house_decode, byteorder='big'))
+
         while True:
             if self.house_connect == 1:
+                self.house_socket.send_string("%d %d" % (self.house_topic, house_value))
+            else:
                 # SunSpec Reading and Decoding
                 house_decode = self.house_client.read(0, 1)
-                print(house_decode)
                 house_value = np.int16(int.from_bytes(house_decode, byteorder='big'))
 
-                print('HOUSE')
-                print(house_value)
-                self.house_connect = 0
-            else:
                 self.house_socket.send_string("%d %d" % (self.house_topic, house_value))
+
+                self.house_event.wait()
+                self.house_event.clear()
 
     def battery_subscriber(self):
         self.sub_socket.connect("tcp://localhost:%s" % self.sub_port)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, self.batteryW_topic)
+
+        # Initial Subscribe (starts event based publishing)
+        power_string = self.sub_socket.recv()
+        power_topic, bat_power = power_string.split()
+        bat_power = int(bat_power)
+
+        self.battery_client.write(3, struct.pack(">h", bat_power))
+
+        self.battery_connect = 0
+        self.solar_connect = 0
+        self.house_connect = 0
         while True:
             # Power Value Subscribing
             power_string = self.sub_socket.recv()
             power_topic, bat_power = power_string.split()
             bat_power = int(bat_power)
-            print('BAT_POWER')
-            print(bat_power)
 
             # Write to Battery Server
             self.battery_client.write(3, struct.pack(">h", bat_power))
 
             # Sets to read new values from servers
-            self.battery_connect = 1
-            self.solar_connect = 1
-            self.house_connect = 1
+            self.bat_event.set()
+            self.solar_event.set()
+            self.house_event.set()
 
 
 if __name__ == '__main__':

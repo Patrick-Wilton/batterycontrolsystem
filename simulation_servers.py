@@ -51,7 +51,7 @@ class Battery:
         self.thread.start()
 
         # Sets Initial Values
-        self.initial_soc = 50
+        self.initial_soc = 0
         self.SOC = 0
         self.dt = 24/len(battery_data)  # Hours
         self.bat_cap = np.trapz(battery_data[0:int(len(battery_data)/2)], dx=self.dt)  # Wh

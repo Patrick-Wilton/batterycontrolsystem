@@ -1,4 +1,4 @@
-import csv
+
 import struct
 import threading
 import time
@@ -7,8 +7,6 @@ from _thread import get_ident
 import numpy as np
 import zmq
 from sunspec.core.client import ClientDevice
-
-from simulation_servers import Battery, Solar, House
 
 
 class Event:
@@ -38,40 +36,26 @@ class Event:
         self.events[get_ident()][0].clear()
 
 
-class Servers:
-    def __init__(self):
-
-        # Setting up Data
-        self.battery_data = []
-        self.solar_data = []
-        self.house_data = []
-
-        # Servers Variables
-        self.battery = None
-        self.solar = None
-        self.house = None
-
-        # Reading CSV File
-        with open('one_day_export.csv', mode='r') as csv_file:
-            csv_reader = csv.DictReader(csv_file)
-            for row in csv_reader:
-                self.battery_data.append(int((float(row["abatteryp"]) * 1000)))
-                self.solar_data.append(int(float(row["asolarp"]) * 1000))
-                self.house_data.append(int(float(row["aloadp"]) * 1000))
-
-    def start(self):
-        self.battery = Battery(self.battery_data)
-        self.solar = Solar(self.solar_data)
-        self.house = House(self.house_data)
-
-
 class SunSpecDriver:
     def __init__(self):
+
+        # Driver Settings
+        self.bat_int = 0.2
+        self.solar_int = 0.2
+        self.house_int = 0.2
+
+        self.bat_pub_time = False
+        self.solar_pub_time = False
+        self.house_pub_time = False
 
         # Connecting SunSpec Clients
         self.battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
         self.solar_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8081)
         self.house_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8082)
+
+        self.battery_server_connection = 0
+        self.solar_server_connection = 0
+        self.house_server_connection = 0
 
         # Waits for Servers
         time.sleep(0.5)
@@ -127,9 +111,13 @@ class SunSpecDriver:
         self.bat_sub_thread.start()
 
     def battery_publisher(self):
-        # SunSpec Reading and Decoding
-        battery_soc_decode = self.battery_client.read(19, 1)
-        soc_value = np.int16(int.from_bytes(battery_soc_decode, byteorder='big'))
+        while self.battery_server_connection == 0:
+            try:
+                battery_soc_decode = self.battery_client.read(19, 1)
+                soc_value = np.int16(int.from_bytes(battery_soc_decode, byteorder='big'))
+                self.battery_server_connection = 1
+            except:
+                print('connecting to battery server')
 
         while True:
             if self.battery_connect == 1:
@@ -141,13 +129,20 @@ class SunSpecDriver:
 
                 self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
 
-                self.bat_event.wait()
-                self.bat_event.clear()
+                if self.bat_pub_time:
+                    time.sleep(self.bat_pub_time)
+                else:
+                    self.bat_event.wait()
+                    self.bat_event.clear()
 
     def solar_publisher(self):
-        # SunSpec Reading and Decoding
-        solar_decode = self.solar_client.read(0, 1)
-        solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
+        while self.solar_server_connection == 0:
+            try:
+                solar_decode = self.solar_client.read(0, 1)
+                solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
+                self.solar_server_connection = 1
+            except:
+                print('connecting to solar server')
 
         while True:
             if self.solar_connect == 1:
@@ -159,13 +154,20 @@ class SunSpecDriver:
 
                 self.solar_socket.send_string("%d %d" % (self.solar_topic, solar_value))
 
-                self.solar_event.wait()
-                self.solar_event.clear()
+                if self.solar_pub_time:
+                    time.sleep(self.solar_int)
+                else:
+                    self.solar_event.wait()
+                    self.solar_event.clear()
 
     def house_publisher(self):
-        # SunSpec Reading and Decoding
-        house_decode = self.house_client.read(0, 1)
-        house_value = np.int16(int.from_bytes(house_decode, byteorder='big'))
+        while self.house_server_connection == 0:
+            try:
+                house_decode = self.house_client.read(0, 1)
+                house_value = np.int16(int.from_bytes(house_decode, byteorder='big'))
+                self.house_server_connection = 1
+            except:
+                print('connecting to house server')
 
         while True:
             if self.house_connect == 1:
@@ -177,8 +179,11 @@ class SunSpecDriver:
 
                 self.house_socket.send_string("%d %d" % (self.house_topic, house_value))
 
-                self.house_event.wait()
-                self.house_event.clear()
+                if self.house_pub_time:
+                    time.sleep(self.house_int)
+                else:
+                    self.house_event.wait()
+                    self.house_event.clear()
 
     def battery_subscriber(self):
         self.sub_socket.connect("tcp://localhost:%s" % self.sub_port)
@@ -207,16 +212,4 @@ class SunSpecDriver:
             self.bat_event.set()
             self.solar_event.set()
             self.house_event.set()
-
-
-if __name__ == '__main__':
-
-    # Starting Server Simulations
-    servers = Servers()
-    servers.start()
-
-    time.sleep(1)
-
-    # Starting SunSpec Driver
-    sun_spec_driver = SunSpecDriver()
 

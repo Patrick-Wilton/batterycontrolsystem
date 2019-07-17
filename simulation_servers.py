@@ -8,6 +8,7 @@ TCP function codes:
     16 = write multiple holding registers
 """
 
+import csv
 import logging
 import threading
 from collections import defaultdict
@@ -182,4 +183,38 @@ class House:
             self.app.shutdown()
             self.app.server_close()
             self.thread = None
+
+
+class Servers:
+    def __init__(self):
+
+        # Setting up Data
+        self.battery_data = []
+        self.solar_data = []
+        self.house_data = []
+
+        # Servers Variables
+        self.battery = None
+        self.solar = None
+        self.house = None
+
+        # Reading CSV File
+        with open('one_day_export.csv', mode='r') as csv_file:
+            csv_reader = csv.DictReader(csv_file)
+            for row in csv_reader:
+                self.battery_data.append(int((float(row["abatteryp"]) * 1000)))
+                self.solar_data.append(int(float(row["asolarp"]) * 1000))
+                self.house_data.append(int(float(row["aloadp"]) * 1000))
+
+    def start(self):
+        self.battery = Battery(self.battery_data)
+        self.solar = Solar(self.solar_data)
+        self.house = House(self.house_data)
+
+
+if __name__ == '__main__':
+
+    # Starting Server Simulations
+    servers = Servers()
+    servers.start()
 

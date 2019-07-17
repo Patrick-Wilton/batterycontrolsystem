@@ -3,8 +3,9 @@ import zmq
 import time
 import threading
 
-import numpy as np
 import matplotlib.pyplot as plt
+
+from simulation_client import SunSpecDriver
 
 
 class Subscriber:
@@ -76,7 +77,99 @@ class Subscriber:
             self.house_read = 1
 
 
+class Control:
+    def __init__(self):
+
+        self.temp = 0
+
+        self.time_interval = 5  # minutes
+        self.time_interval_hour = 1 / (60 / self.time_interval)
+        self.time_max_count = int(24 / self.time_interval_hour)
+        self.time_count = 1
+        self.bat_power = 0
+
+        self.data = {}
+        self.data["soc"] = []
+        self.data["bat_power"] = []
+        self.data["solar_power"] = []
+        self.data["house_power"] = []
+
+        # Sets Initial Plot
+        plt.axis([0, 24, -6, 8])
+        plt.title('One Day')
+        plt.xlabel('Time (Hours)')
+        plt.ylabel('Power (kW)')
+
+        open("control_power_values.txt", "w+").close()
+
+    def battery_control(self, bat, solar, house):
+
+        # Prints Readings
+        print('NEW READING')
+        print('SOC')
+        print(bat)
+        print('bat power')
+        print(self.bat_power)
+        print('solar')
+        print(solar)
+        print('house')
+        print(house)
+
+        # Internal Data Store
+        self.data_store(sub.bat_SOC, sub.solar_power, sub.house_power)
+
+        # Text File Writing
+        self.write_to_text(bat, solar, house)
+
+        # Data Filtering
+        self.kalman_filter()
+
+        # Data Plotting
+        if self.time_count == self.time_max_count:
+            plt.scatter(24, self.bat_power / 1000, s=2, c='g')
+            plt.scatter(24, solar / 1000, s=2, c='r')
+            plt.scatter(24, house / 1000, s=2, c='b')
+            plt.pause(0.05)
+            self.time_count = 1
+        else:
+            plt.scatter(self.time_count / (60 / self.time_interval), self.bat_power / 1000, s=2, c='g')
+            plt.scatter(self.time_count / (60 / self.time_interval), solar / 1000, s=2, c='r')
+            plt.scatter(self.time_count / (60 / self.time_interval), house / 1000, s=2, c='b')
+            plt.pause(0.05)
+            self.time_count += 1
+
+        # Control System
+        grid = self.bat_power + solar + house
+        self.bat_power = -grid + self.bat_power
+        if (bat == 0 and self.bat_power < 0) or (bat == 100 and self.bat_power > 0):
+            self.bat_power = 0
+
+        return self.bat_power
+
+    def kalman_filter(self):
+        self.temp = 1
+
+    def write_to_text(self, bat, solar, house):
+        file = open("control_power_values.txt", "a+")
+        hour_string = str(round(self.time_count / (60 / self.time_interval), 2))
+        soc_str = str(bat)
+        solar_str = str(solar)
+        house_str = str(house)
+        file.write("\n"+hour_string+" "+soc_str+" "+str(self.bat_power)+" "+solar_str+" "+house_str)
+        file.close()
+
+    def data_store(self, bat, solar, house):
+        self.data["soc"].append(bat)
+        self.data["bat_power"].append(self.bat_power)
+        self.data["solar_power"].append(solar)
+        self.data["house_power"].append(house)
+
+
 if __name__ == '__main__':
+
+    # Control System Settings
+    control_interval = 1
+    control_time = False
 
     # ZeroMQ Publishing
     pub_port = "8093"
@@ -85,62 +178,26 @@ if __name__ == '__main__':
     pub_socket = pub_context.socket(zmq.PUB)
     pub_socket.bind("tcp://*:%s" % pub_port)
 
-    # Sets Initial Values
-    prev_power = 0
-    time_interval = 5  # minutes
-    time_interval = 1/(60/time_interval)
-    time_max_count = int(24/time_interval)
-    time_count = 1
+    # Creates Control Class Instance
+    control = Control()
 
-    # Sets Initial Plot
-    plt.axis([0, 24, -6, 8])
-    plt.title('One Day')
-    plt.xlabel('Time (Hours)')
-    plt.ylabel('Power (kW)')
-
-    print('Starting Control System')
+    # Starts Subscribers and SunSpec Drivers
     sub = Subscriber()
+    sun_spec_driver = SunSpecDriver()
+
+    # MAIN LOOP
+    print('Starting Control System')
     while True:
-        if sub.battery_read == 1 & sub.solar_read == 1 & sub.house_read == 1:
-            bat = sub.bat_SOC
-            solar = sub.solar_power
-            house = sub.house_power
+        if control_time:
 
-            print('NEW READING')
-            print('SOC')
-            print(bat)
-            print('bat power')
-            print(prev_power)
-            print('solar')
-            print(solar)
-            print('house')
-            print(house)
+            bat_power = control.battery_control(sub.bat_SOC, sub.solar_power, sub.house_power)
 
-            # Data Filtering
+            pub_socket.send_string("%d %d" % (pub_topic, bat_power))
+            time.sleep(control_interval)
 
-            # Data Plotting
-            if time_count == time_max_count:
-                plt.scatter(24, prev_power / 1000, s=2,  c='g')
-                plt.scatter(24, solar / 1000, s=2, c='r')
-                plt.scatter(24, house / 1000, s=2,  c='b')
-                plt.pause(0.05)
-                time_count = 1
-            else:
-                plt.scatter(time_count/12, prev_power / 1000, s=2, c='g')
-                plt.scatter(time_count/12, solar / 1000, s=2, c='r')
-                plt.scatter(time_count/12, house / 1000, s=2, c='b')
-                plt.pause(0.05)
-                time_count += 1
+        elif sub.battery_read == 1 & sub.solar_read == 1 & sub.house_read == 1:
 
-            # Control System
-            grid = prev_power + solar + house
-            bat_power = -grid
-            if (bat == 0 and bat_power < 0) or (bat == 100 and bat_power > 0):
-                bat_power = 0
-            prev_power = bat_power
-
-            # Simulated Processing Delay
-            time.sleep(0.1)
+            bat_power = control.battery_control(sub.bat_SOC, sub.solar_power, sub.house_power)
 
             # Publishing
             pub_socket.send_string("%d %d" % (pub_topic, bat_power))

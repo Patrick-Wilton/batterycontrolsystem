@@ -5,7 +5,7 @@ import threading
 
 import matplotlib.pyplot as plt
 
-from simulation_client import SunSpecDriver
+from Code.simulation_client import SunSpecDriver
 
 
 class Subscriber:

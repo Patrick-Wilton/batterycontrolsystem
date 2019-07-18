@@ -82,7 +82,6 @@ class Battery:
             new_soc = 0
 
         self.set_value(new_soc)
-        return new_soc
 
     def _thread(self):
         try:
@@ -202,7 +201,7 @@ class Servers:
         with open('one_day_export.csv', mode='r') as csv_file:
             csv_reader = csv.DictReader(csv_file)
             for row in csv_reader:
-                self.battery_data.append(int((float(row["abatteryp"]) * 1000)))
+                self.battery_data.append(int(float(row["abatteryp"]) * 1000))
                 self.solar_data.append(int(float(row["asolarp"]) * 1000))
                 self.house_data.append(int(float(row["aloadp"]) * 1000))
 

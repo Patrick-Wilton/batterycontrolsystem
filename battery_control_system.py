@@ -88,7 +88,7 @@ class Control:
         self.time_count = 1
         self.bat_power = 0
 
-        self.data = {}
+        self.data = dict()
         self.data["soc"] = []
         self.data["bat_power"] = []
         self.data["solar_power"] = []
@@ -105,15 +105,15 @@ class Control:
     def battery_control(self, bat, solar, house):
 
         # Prints Readings
-        print('NEW READING')
-        print('SOC')
-        print(bat)
-        print('bat power')
-        print(self.bat_power)
-        print('solar')
-        print(solar)
-        print('house')
-        print(house)
+        # print('NEW READING')
+        # print('SOC')
+        # print(bat)
+        # print('bat power')
+        # print(self.bat_power)
+        # print('solar')
+        # print(solar)
+        # print('house')
+        # print(house)
 
         # Internal Data Store
         self.data_store(sub.bat_SOC, sub.solar_power, sub.house_power)

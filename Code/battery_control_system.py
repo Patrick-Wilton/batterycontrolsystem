@@ -1,3 +1,12 @@
+"""
+List of Current Control Settings
+* battery, solar and house publish timings vs event based
+* control system timing (must be used with publisher timing settings ON)
+* real time plotting vs inferred simulation timings
+* house and solar input filtering
+* battery power output filtering
+"""
+
 
 import zmq
 import time
@@ -101,7 +110,7 @@ class Subscriber:
                 self.bat_SOC = int(self.bat_SOC)
 
                 self.write_to_text("SOC", round(time.time() - self.initial_time, 2), self.bat_SOC)
-                self.data_store("soc", self.house_power)
+                self.data["soc"].append(self.bat_SOC)
 
                 self.battery_read = 1
 
@@ -117,7 +126,7 @@ class Subscriber:
                     self.solar_power = self.solar_filter.current_state()
 
                 self.write_to_text("solar", round(time.time() - self.initial_time, 2), self.solar_power)
-                self.data_store("solar_power", self.house_power)
+                self.data["solar_power"].append(self.solar_power)
 
                 if self.solar_time_count == self.solar_max_time:
                     self.solar_time_count = 1
@@ -138,7 +147,7 @@ class Subscriber:
                     self.house_power = self.house_filter.current_state()
 
                 self.write_to_text("house", round(time.time() - self.initial_time, 2), self.house_power)
-                self.data_store("house_power", self.house_power)
+                self.data["house_power"].append(self.house_power)
 
                 if self.house_time_count == self.house_max_time:
                     self.house_time_count = 1
@@ -157,9 +166,6 @@ class Subscriber:
 
         self.lock.release()
 
-    def data_store(self, device, value):
-        self.data[device].append(value)
-
 
 class Control:
     def __init__(self):
@@ -171,9 +177,10 @@ class Control:
         self.control_time_count = 1
 
         self.bat_power = 0
-        self.control_time_step = 30
-        self.control_time = False
+        self.control_time_step = 20  # minutes
+        self.control_time = True
         self.bat_filtering = True
+        self.real_time_plotting = False
 
         # Sets up Kalman Filters
         self.battery_filter = KalmanFilter(1, 0, 1, 0, 1, 0.05, 1)
@@ -260,6 +267,7 @@ if __name__ == '__main__':
     plt.title('One Day')
     plt.xlabel('Time (Hours)')
     plt.ylabel('Power (kW)')
+    plt.grid(True)
 
     # MAIN LOOP
     print('Starting Control System')
@@ -282,7 +290,8 @@ if __name__ == '__main__':
         elif connected and connect_check is False:
             if control.control_time and first_read:
 
-                control.battery_control(sub.bat_SOC, sub.solar_power, sub.house_power)
+                if sub.solar_time_count % int(control.control_time_step / control.control_interval) == 0:
+                    control.battery_control(sub.bat_SOC, sub.solar_power, sub.house_power)
 
             elif all_read:
 
@@ -294,10 +303,17 @@ if __name__ == '__main__':
                 sub.house_read = 0
 
             # Plotting
-            plt.scatter(control.control_time_count / (60 / control.control_interval), control.bat_power / 1000, s=2, c='g')
-            plt.scatter(sub.solar_time_count / (60 / sub.solar_timing), int(sub.solar_power) / 1000, s=2, c='r')
-            plt.scatter(sub.house_time_count / (60 / sub.house_timing), int(sub.house_power) / 1000, s=2, c='b')
-            plt.pause(0.01)
+            if control.real_time_plotting:
+                curr_time = round(time.time() - sub.initial_time, 2)
+                plt.scatter(curr_time, control.bat_power / 1000, s=2, c='g')
+                plt.scatter(curr_time, int(sub.solar_power) / 1000, s=2, c='r')
+                plt.scatter(curr_time, int(sub.house_power) / 1000, s=2, c='b')
+                plt.pause(0.01)
+            else:
+                plt.scatter(sub.solar_time_count / (60 / sub.solar_timing), control.bat_power / 1000, s=2, c='g')
+                plt.scatter(sub.solar_time_count / (60 / sub.solar_timing), int(sub.solar_power) / 1000, s=2, c='r')
+                plt.scatter(sub.house_time_count / (60 / sub.house_timing), int(sub.house_power) / 1000, s=2, c='b')
+                plt.pause(0.01)
 
 
 

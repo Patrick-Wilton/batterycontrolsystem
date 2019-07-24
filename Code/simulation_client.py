@@ -40,13 +40,13 @@ class SunSpecDriver:
     def __init__(self):
 
         # Driver Settings
-        self.bat_int = 0.2
-        self.solar_int = 0.2
-        self.house_int = 0.2
+        self.bat_int = 0.1
+        self.solar_int = 0.1
+        self.house_int = 0.1
 
-        self.bat_pub_time = False
-        self.solar_pub_time = False
-        self.house_pub_time = False
+        self.bat_pub_time = True
+        self.solar_pub_time = True
+        self.house_pub_time = True
 
         # Connecting SunSpec Clients
         self.battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
@@ -64,6 +64,9 @@ class SunSpecDriver:
         self.bat_event = Event()
         self.solar_event = Event()
         self.house_event = Event()
+
+        self.bat_read = 0
+        self.bat_write = 0
 
         # ZeroMQ Publishing
         self.bat_port = "8090"
@@ -116,13 +119,17 @@ class SunSpecDriver:
                 self.bat_socket.send_string("%d %s" % (self.batterySOC_topic, 'bat_connect'))
             else:
                 # SunSpec Reading and Decoding
-                battery_soc_decode = self.battery_client.read(19, 1)
+                self.bat_read = 1
+                if self.bat_write == 0:
+                    battery_soc_decode = self.battery_client.read(19, 1)
+                self.bat_read = 0
+
                 soc_value = np.int16(int.from_bytes(battery_soc_decode, byteorder='big'))
 
                 self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
 
                 if self.bat_pub_time:
-                    time.sleep(self.bat_pub_time)
+                    time.sleep(self.bat_int)
                 else:
                     self.bat_event.wait()
                     self.bat_event.clear()
@@ -178,10 +185,13 @@ class SunSpecDriver:
                 bat_power = int(bat_power)
 
                 # Write to Battery Server
-                self.battery_client.write(3, struct.pack(">h", bat_power))
+                self.bat_write = 1
+                if self.bat_read == 0:
+                    self.battery_client.write(3, struct.pack(">h", bat_power))
 
                 # Sets to read new values from servers
                 self.bat_event.set()
+                self.bat_write = 0
                 self.solar_event.set()
                 self.house_event.set()
 

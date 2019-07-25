@@ -44,9 +44,10 @@ class SunSpecDriver:
         self.solar_int = 0.1
         self.house_int = 0.1
 
-        self.bat_pub_time = True
-        self.solar_pub_time = True
-        self.house_pub_time = True
+        self.bat_pub_time = False
+        self.solar_pub_time = False
+        self.house_pub_time = False
+        self.all_pub_time = False
 
         # Connecting SunSpec Clients
         self.battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
@@ -114,6 +115,7 @@ class SunSpecDriver:
         self.bat_sub_thread.start()
 
     def battery_publisher(self):
+        battery_soc_decode = b'\x00\x00'
         while True:
             if self.battery_connect == 0:
                 self.bat_socket.send_string("%d %s" % (self.batterySOC_topic, 'bat_connect'))
@@ -122,13 +124,15 @@ class SunSpecDriver:
                 self.bat_read = 1
                 if self.bat_write == 0:
                     battery_soc_decode = self.battery_client.read(19, 1)
+                else:
+                    print('skip battery READ')
                 self.bat_read = 0
 
                 soc_value = np.int16(int.from_bytes(battery_soc_decode, byteorder='big'))
 
                 self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
 
-                if self.bat_pub_time:
+                if self.bat_pub_time or self.all_pub_time:
                     time.sleep(self.bat_int)
                 else:
                     self.bat_event.wait()
@@ -145,7 +149,7 @@ class SunSpecDriver:
 
                 self.solar_socket.send_string("%d %d" % (self.solar_topic, solar_value))
 
-                if self.solar_pub_time:
+                if self.solar_pub_time or self.all_pub_time:
                     time.sleep(self.solar_int)
                 else:
                     self.solar_event.wait()
@@ -162,7 +166,7 @@ class SunSpecDriver:
 
                 self.house_socket.send_string("%d %d" % (self.house_topic, house_value))
 
-                if self.house_pub_time:
+                if self.house_pub_time or self.all_pub_time:
                     time.sleep(self.house_int)
                 else:
                     self.house_event.wait()
@@ -188,6 +192,8 @@ class SunSpecDriver:
                 self.bat_write = 1
                 if self.bat_read == 0:
                     self.battery_client.write(3, struct.pack(">h", bat_power))
+                else:
+                    print('skip battery WRITE')
 
                 # Sets to read new values from servers
                 self.bat_event.set()

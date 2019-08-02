@@ -326,7 +326,7 @@ if __name__ == '__main__':
     control = Control(sub.solar_timing)
 
     # Sets Initial Plot Parameters
-    plt.figure(figsize=[15, 10])
+    plt.figure(figsize=[12, 7])
     plt.axis([0, 24, -6, 8])
     plt.title('One Day')
     plt.xlabel('Time (Hours)')

@@ -54,45 +54,53 @@ class SunSpecDriver:
         self.solar_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8081)
         self.house_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8082)
 
-        self.battery_server_connection = 0
-        self.solar_server_connection = 0
-        self.house_server_connection = 0
-
-        # Waits for Servers
-        time.sleep(0.5)
-
         # Event Classes
         self.bat_event = Event()
         self.solar_event = Event()
         self.house_event = Event()
-
-        self.bat_read = 0
-        self.bat_write = 0
-
-        # ZeroMQ Publishing
-        self.bat_port = "8090"
-        self.solar_port = "8091"
-        self.house_port = "8092"
-        self.batterySOC_topic = 0
-        self.solar_topic = 0
-        self.house_topic = 0
-        self.context = zmq.Context()
-        self.bat_socket = self.context.socket(zmq.PUB)
-        self.bat_socket.bind("tcp://*:%s" % self.bat_port)
-        self.solar_socket = self.context.socket(zmq.PUB)
-        self.solar_socket.bind("tcp://*:%s" % self.solar_port)
-        self.house_socket = self.context.socket(zmq.PUB)
-        self.house_socket.bind("tcp://*:%s" % self.house_port)
 
         # Connection Variables
         self.battery_connect = 0
         self.solar_connect = 0
         self.house_connect = 0
 
-        # ZeroMQ Subscribing
+        # Parameters in case of simultaneous battery read and writes
+        self.bat_read = 0
+        self.bat_write = 0
+
+        # ZeroMQ Settings
+        self.bat_port = "8090"
+        self.solar_port = "8091"
+        self.house_port = "8092"
+        self.batterySOC_topic = 0
+        self.solar_topic = 0
+        self.house_topic = 0
         self.sub_port = "8093"
         self.batteryW_topic = "0"
-        self.sub_socket = self.context.socket(zmq.SUB)
+
+        # Defines Sockets and Threads
+        self.bat_socket = None
+        self.solar_socket = None
+        self.house_socket = None
+        self.sub_socket = None
+
+        self.bat_pub_thread = None
+        self.solar_thread = None
+        self.house_thread = None
+        self.bat_sub_thread = None
+
+        # Starts Drivers
+        self.start_drivers()
+
+    def start_drivers(self):
+        context = zmq.Context()
+        self.bat_socket = context.socket(zmq.PUB)
+        self.bat_socket.bind("tcp://*:%s" % self.bat_port)
+        self.solar_socket = context.socket(zmq.PUB)
+        self.solar_socket.bind("tcp://*:%s" % self.solar_port)
+        self.house_socket = context.socket(zmq.PUB)
+        self.house_socket.bind("tcp://*:%s" % self.house_port)
+        self.sub_socket = context.socket(zmq.SUB)
 
         # Starts Battery SOC Driver Thread
         print('starting battery SOC driver')
@@ -115,8 +123,9 @@ class SunSpecDriver:
         self.bat_sub_thread.start()
 
     def battery_publisher(self):
-        battery_soc_decode = b'\x00\x00'
+        battery_soc_decode = b'\x00\x00'  # TODO set actual init value defined
         while True:
+            # Makes sure initial connection is established
             if self.battery_connect == 0:
                 self.bat_socket.send_string("%d %s" % (self.batterySOC_topic, 'bat_connect'))
             else:
@@ -130,6 +139,7 @@ class SunSpecDriver:
 
                 soc_value = np.int16(int.from_bytes(battery_soc_decode, byteorder='big'))
 
+                # ZeroMQ Publishing
                 self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
 
                 if self.bat_pub_time or self.all_pub_time:
@@ -140,6 +150,7 @@ class SunSpecDriver:
 
     def solar_publisher(self):
         while True:
+            # Makes sure initial connection is established
             if self.solar_connect == 0:
                 self.solar_socket.send_string("%d %s" % (self.solar_topic, 'solar_connect'))
             else:
@@ -157,6 +168,7 @@ class SunSpecDriver:
 
     def house_publisher(self):
         while True:
+            # Makes sure initial connection is established
             if self.house_connect == 0:
                 self.house_socket.send_string("%d %s" % (self.house_topic, 'house_connect'))
             else:
@@ -173,22 +185,23 @@ class SunSpecDriver:
                     self.house_event.clear()
 
     def battery_subscriber(self):
+        # Connects Subscriber to socket and topic
         self.sub_socket.connect("tcp://localhost:%s" % self.sub_port)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, self.batteryW_topic)
 
         while True:
-            # Power Value Subscribing
+            # ZeroMQ Subscribing
             power_string = self.sub_socket.recv()
             power_topic, bat_power = power_string.split()
 
+            # Makes sure initial connection is established
             if bat_power == b'connected':
                 self.battery_connect = 1
                 self.solar_connect = 1
                 self.house_connect = 1
             else:
+                # Writes new Power Value to Battery Server
                 bat_power = int(bat_power)
-
-                # Write to Battery Server
                 self.bat_write = 1
                 if self.bat_read == 0:
                     self.battery_client.write(3, struct.pack(">h", bat_power))

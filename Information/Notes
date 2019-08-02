@@ -1,0 +1,53 @@
+# Notes
+
+## Optimiser Inputs and Outputs
+* ### Inputs
+    * 24 Hour Forecast Including:
+        * time interval and hence total number of values
+        * house load for 24 hours (kW)
+        * solar readings for 24 hours (kW)
+        * import tariff for 24 hours ($ / kWh)
+        * export tariff for 24 hours ($ / kWh)
+    * Battery Model Including:
+        * max capacity (kWh)
+        * depth of discharge limit (typically 0% e.g. 100% SOC)
+        * charging_power_limit (kW)
+        * discharging_power_limit (kW)
+        * charging_efficiency (ideally = 1)
+        * discharging_efficiency (ideally = 1)
+        * throughput_cost
+        * initial_state_of_charge (optional, default = 0)
+    * Objective Function Parameters (can be one of the following)
+        * Financial
+        * Energy
+        * Peak
+        * Quantised Peak
+        * Dispatch
+    
+* ### Outputs (all 24 hours worth of values)
+    * SOC VALUES
+        * Storage SOC
+        * Increase in SOC at each time step
+        * Decrease in SOC at each time step
+    * BATTERY POWER VALUES
+        * Increase in battery SoC from the Grid (charge from grid)
+        * Increase in battery SoC from PV Generation (charge from PV)
+        * Satisfying local demand from the battery (discharge from house load)
+        * Exporting to the grid from the battery (discharge from grid)
+    * NET GRID VALUES
+        * Net import from the grid
+        * Net export from the grid
+    * PEAK VALUES
+        * Peak import power (connection point)
+        * Peak export power (connection point)
+        
+## Settings to be moved to configuration file:
+* Server Specific:
+    * battery capacity
+    * initial SOC
+    * solar + house load data file name
+    * IP addresses, ports, and register addresses
+* Driver Specific
+    * Server IP addresses, ports, and address values
+    * Pub Drivers IP addresses and ports
+    * Pub Drivers time settings

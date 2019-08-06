@@ -51,3 +51,7 @@
     * Server IP addresses, ports, and address values
     * Pub Drivers IP addresses and ports
     * Pub Drivers time settings
+    
+## System Assumptions
+* Data in servers in the form of Watts (not kW) due to being int16 values
+* It is possible to write power values directly to the battery server

@@ -1,0 +1,61 @@
+
+# Settings for hardware servers
+server:
+  battery:
+    device_type: TCP
+    slave_id: 1
+    ipaddr: localhost
+    ipport: 8080
+    SOCaddr: 19
+    poweraddr: 3
+  solar:
+    device_type: TCP
+    slave_id: 1
+    ipaddr: localhost
+    ipport: 8081
+    poweraddr: 0
+  house:
+    device_type: TCP
+    slave_id: 1
+    ipaddr: localhost
+    ipport: 8082
+    poweraddr: 0
+
+# Settings publishing and subscribing
+ZeroMQ:
+  use_event_pub: yes
+  battery_pub_time: 0.1
+  solar_pub_time: 0.1
+  house_pub_time: 0.1
+  battery_SOC_port: 8090
+  battery_power_port: 8093
+  solar_port: 8091
+  house_port: 8092
+  battery_SOC_topic: 0
+  battery_power_topic: 0
+  solar_topic: 0
+  house_topic: 0
+
+# Physical battery characteristics
+battery:
+  max_capacity: 6.2
+  DOD_limit: 0
+  charging_power_limit: 5.0
+  discharging_power_limit: 5.0
+  charging_efficiency: 1
+  discharging_efficiency: 1
+  throughput_cost: 0.018
+  initial_SOC: 0
+
+# Simulation specific settings
+simulation:
+  data_file_name: one_day_export.csv
+  solar_row_name: asolarp
+  house_row_name: aloadp
+  use_real_time: yes
+  use_visualisation: yes
+  display_grid: yes
+
+# Control system settings
+control:
+  control_time_step: 5 # Minutes

@@ -12,12 +12,21 @@ List of Current Control Settings
 
 import zmq
 import time
+import yaml
 import threading
 import numpy as np
 
 import matplotlib.pyplot as plt
 
 from Code.simulation_client import SunSpecDriver
+
+
+class Settings:
+    def __init__(self):
+        with open("config_settings.yml", 'r') as ymlfile:
+            yml_dict = yaml.load(ymlfile, Loader=yaml.FullLoader)
+        for k, v in yml_dict.items():
+            setattr(self, k, v)
 
 
 class Subscriber:
@@ -32,8 +41,15 @@ class Subscriber:
         self.solar_power = 0
         self.house_power = 0
 
+        self.day_count = 0
+
         self.solar_int = 0
         self.house_int = 0
+
+        self.ts = 5000
+
+        # Sets Initial Time
+        self.initial_time = None
 
         self.lock = threading.Lock()
 
@@ -41,7 +57,7 @@ class Subscriber:
         self.solar_timing = 5  # minutes
         self.house_timing = 5  # minutes
 
-        # Erases Text File Contents
+        # Erases Previous Text File Contents
         open("control_power_values.txt", "w+").close()
 
         # Creates Internal Data Store
@@ -56,33 +72,6 @@ class Subscriber:
         self.data["house_power"] = []
         self.data["house_plot"] = []
 
-        # Sets up Kalman Filters
-        self.solar_filtering = True
-        self.house_filtering = True
-        self.solar_filter = KalmanFilter(1, 0, 1, 0, 1, 0.05, 1)
-        self.house_filter = KalmanFilter(1, 0, 1, 700, 1, 0.05, 1)
-
-        # ZeroMQ Subscribing
-        bat_port = "8090"
-        solar_port = "8091"
-        house_port = "8092"
-        battery_topic = "0"
-        solar_topic = "0"
-        house_topic = "0"
-        sub_context = zmq.Context()
-
-        self.bat_socket = sub_context.socket(zmq.SUB)
-        self.bat_socket.connect("tcp://localhost:%s" % bat_port)
-        self.bat_socket.setsockopt_string(zmq.SUBSCRIBE, battery_topic)
-
-        self.solar_socket = sub_context.socket(zmq.SUB)
-        self.solar_socket.connect("tcp://localhost:%s" % solar_port)
-        self.solar_socket.setsockopt_string(zmq.SUBSCRIBE, solar_topic)
-
-        self.house_socket = sub_context.socket(zmq.SUB)
-        self.house_socket.connect("tcp://localhost:%s" % house_port)
-        self.house_socket.setsockopt_string(zmq.SUBSCRIBE, house_topic)
-
         # Plot Timings
         self.bat_hour = 1 / (60 / self.bat_timing)
         self.bat_max_time = int(24 / self.bat_hour)
@@ -96,8 +85,43 @@ class Subscriber:
         self.house_max_time = int(24 / self.house_hour)
         self.house_time_count = 1
 
-        # Sets Initial Time
-        self.initial_time = None
+        # Sets up Kalman Filters
+        self.solar_filtering = True
+        self.house_filtering = True
+        self.solar_filter = KalmanFilter(1, 0, 1, 0, 1, 0.05, 1)
+        self.house_filter = KalmanFilter(1, 0, 1, 700, 1, 0.05, 1)
+
+        # ZeroMQ Settings
+        self.bat_port = "8090"
+        self.solar_port = "8091"
+        self.house_port = "8092"
+        self.battery_topic = "0"
+        self.solar_topic = "0"
+        self.house_topic = "0"
+
+        # Defines Sockets and Threads
+        self.bat_socket = None
+        self.solar_socket = None
+        self.house_socket = None
+
+        self.bat_thread = None
+        self.solar_thread = None
+        self.house_thread = None
+
+        # Starts Subscribers
+        self.start_subscribers()
+
+    def start_subscribers(self):
+        sub_context = zmq.Context()
+        self.bat_socket = sub_context.socket(zmq.SUB)
+        self.bat_socket.connect("tcp://localhost:%s" % self.bat_port)
+        self.bat_socket.setsockopt_string(zmq.SUBSCRIBE, self.battery_topic)
+        self.solar_socket = sub_context.socket(zmq.SUB)
+        self.solar_socket.connect("tcp://localhost:%s" % self.solar_port)
+        self.solar_socket.setsockopt_string(zmq.SUBSCRIBE, self.solar_topic)
+        self.house_socket = sub_context.socket(zmq.SUB)
+        self.house_socket.connect("tcp://localhost:%s" % self.house_port)
+        self.house_socket.setsockopt_string(zmq.SUBSCRIBE, self.house_topic)
 
         # Starts Battery Sub Thread
         print('starting battery SOC subscriber')
@@ -121,7 +145,7 @@ class Subscriber:
             if self.bat_SOC != b'bat_connect':
                 self.bat_SOC = int(self.bat_SOC)
 
-                self.write_to_text("SOC", round(time.time() - self.initial_time, 2), self.bat_SOC)
+                self.write_to_text("SOC", round((time.time() - self.initial_time) * self.ts, 2) / 3600, self.bat_SOC)
                 self.data["soc"].append(self.bat_SOC)
 
                 self.battery_read = 1
@@ -137,11 +161,14 @@ class Subscriber:
                     self.solar_filter.step(0, self.solar_power)
                     self.solar_power = self.solar_filter.current_state()
 
-                self.write_to_text("solar", round(time.time() - self.initial_time, 2), self.solar_power)
-                self.data["solar_time"].append(self.solar_time_count / (60 / self.solar_timing))
-                self.data["solar_real_time"].append(round(time.time() - self.initial_time, 2) / 3600)
+                self.write_to_text("solar", round((time.time() - self.initial_time) * self.ts, 2) / 3600, self.solar_power)
+
+                # self.data["solar_time"].append(self.solar_time_count / (60 / self.solar_timing))
+
+                self.data["solar_time"].append((round((time.time() - self.initial_time) * self.ts, 2) / 3600) - (24 * self.day_count))
                 self.data["solar_power"].append(self.solar_power / 1000)
-                if self.data["solar_time"][-1] == 24:
+
+                if abs(self.data["solar_time"][-1] - 24) < 0.1:
                     self.data["solar_plot"].append(np.nan)
                 else:
                     self.data["solar_plot"].append(self.solar_power / 1000)
@@ -165,11 +192,14 @@ class Subscriber:
                     self.house_filter.step(0, self.house_power)
                     self.house_power = self.house_filter.current_state()
 
-                self.write_to_text("house", round(time.time() - self.initial_time, 2), self.house_power)
-                self.data["house_time"].append(self.house_time_count / (60 / self.house_timing))
-                self.data["house_real_time"].append(round(time.time() - self.initial_time, 2) / 3600)
+                self.write_to_text("house", round((time.time() - self.initial_time) * self.ts, 2) / 3600, self.house_power)
+
+                # self.data["house_time"].append(self.house_time_count / (60 / self.house_timing))
+                self.data["house_time"].append((round((time.time() - self.initial_time) * self.ts, 2) / 3600) - (24 * self.day_count))
+
                 self.data["house_power"].append(self.house_power / 1000)
-                if self.data["house_time"][-1] == 24:
+
+                if abs(self.data["house_time"][-1] - 24) < 0.1:
                     self.data["house_plot"].append(np.nan)
                 else:
                     self.data["house_plot"].append(self.house_power / 1000)
@@ -197,6 +227,7 @@ class KalmanFilter:
     def __init__(self, process_dynamics, control_dynamics, measurement_dynamics, current_state_estimate,
                  current_prob_estimate, process_covariance, measurement_covariance):
 
+        # Initial Values
         self.pro_dyn = process_dynamics
         self.con_dyn = control_dynamics
         self.meas_dyn = measurement_dynamics
@@ -229,6 +260,8 @@ class KalmanFilter:
 class Control:
     def __init__(self, sub_time):
 
+        self.ts = 5000
+
         # Initial Values
         self.control_interval = 5  # minutes
         self.sub_time = sub_time
@@ -237,6 +270,7 @@ class Control:
         self.control_time_count = 1
         self.initial_time = None
         self.control_int = 0
+        self.day_count = 0
 
         self.bat_power = 0
         self.grid = 0
@@ -272,9 +306,12 @@ class Control:
     def battery_control(self, bat, solar, house, curr_time):
 
         # Internal Data Store
-        self.control_data["control_time"].append((curr_time - 1) / (60 / self.sub_time))
-        self.control_data["control_real_time"].append(round(time.time() - self.initial_time, 2) / 3600)
+        # self.control_data["control_time"].append((curr_time - 1) / (60 / self.sub_time))
+
+        self.control_data["control_time"].append(
+            (round((time.time() - self.initial_time) * self.ts, 2) / 3600) - 24 * self.day_count)
         self.control_data["bat_power"].append(self.bat_power / 1000)
+
         if abs(self.control_data["control_time"][-1] - 24) < 0.1:
             self.control_data["bat_plot"].append(np.nan)
         else:
@@ -308,142 +345,163 @@ class Control:
         self.pub_socket.send_string("%d %d" % (self.pub_topic, self.bat_power))
 
 
+class DataVisualisation:
+    def __init__(self, ref):
+
+        # Plot Settings
+        self.display_grid = True
+
+        # Sets Initial Plot Parameters
+        plt.figure(figsize=[12, 7])
+        plt.axis([0, 24, -6, 8])
+        plt.title('One Day')
+        plt.xlabel('Time (Hours)')
+        plt.ylabel('Power (kW)')
+        plt.grid(True)
+        plt.ion()
+
+        # Creates Reference Line
+        ref_line = plt.hlines(ref / 1000, 0, 24, linestyles='dashed')
+        ref_line.set_label('Reference Grid Power')
+
+        # Initialises Line Graphs
+        self.house_line, = plt.plot([], [], '-o', alpha=0.8, c='b', markersize=2)
+        self.house_line.set_label('House Power')
+        self.solar_line, = plt.plot([], [], '-o', alpha=0.8, c='r', markersize=2)
+        self.solar_line.set_label('Solar Power')
+        self.battery_line, = plt.plot([], [], '-o', alpha=0.8, c='g', markersize=2)
+        self.battery_line.set_label('Battery Power')
+        self.grid_line, = plt.plot([], [], '-o', alpha=0.8, c='m', markersize=2)
+        if self.display_grid:
+            self.grid_line.set_label('Grid Power')
+        plt.legend()
+
+    def update_plot(self, sub_data, control_data, index):
+
+        # Sets x and y values for house, solar and battery lines
+        house_x = sub_data["house_time"][index[0]:]
+        house_y = sub_data["house_plot"][index[0]:]
+        solar_x = sub_data["solar_time"][index[1]:]
+        solar_y = sub_data["solar_plot"][index[1]:]
+        battery_x = control_data["control_time"][index[2]:]
+        battery_y = control_data["bat_plot"][index[2]:]
+
+        # Updates house, solar and battery lines
+        self.house_line.set_data(house_x, house_y)
+        self.solar_line.set_data(solar_x, solar_y)
+        self.battery_line.set_data(battery_x, battery_y)
+
+        # Updates grid line if necessary
+        if self.display_grid:
+            grid_x = control_data["control_time"][index[2]:]
+            grid_y = control_data["grid_plot"][index[2]:]
+            self.grid_line.set_data(grid_x, grid_y)
+
+        # Update plot
+        plt.pause(0.001)
+
+
 if __name__ == '__main__':
 
+    # Reads settings configuration file
+    settings = Settings()
+
     # Creates Initial Connect Parameters
-    connected = False
-    first_read = False
     plot_erase = False
     control_check = False
 
-    house_plot_index = 0
-    solar_plot_index = 0
-    control_plot_index = 0
+    initial_connect = False
+    connected = False
+
+    plot_index = [0, 0, 0]
+
+    house_erase_index = 0
+    solar_erase_index = 0
+    control_erase_index = 0
+
+    ts = 5000
 
     # Starts Subscribers, SunSpec Drivers and Control Class
-    sub = Subscriber()
-    sun_spec_driver = SunSpecDriver()
-    control = Control(sub.solar_timing)
+    data = Subscriber()
+    sun_spec_driver = SunSpecDriver(settings)
+    control = Control(data.solar_timing)
+    plot = DataVisualisation(control.grid_ref / 1000)
 
-    # Sets Initial Plot Parameters
-    plt.figure(figsize=[12, 7])
-    plt.axis([0, 24, -6, 8])
-    plt.title('One Day')
-    plt.xlabel('Time (Hours)')
-    plt.ylabel('Power (kW)')
-    plt.grid(True)
-    ref_line = plt.hlines(control.grid_ref / 1000, 0, 24, linestyles='dashed')
-    ref_line.set_label('Reference Grid Power')
-    plt.ion()
-
-    house_line, = plt.plot(sub.data["house_time"], sub.data["house_power"], '-o', alpha=0.8, c='b', markersize=2)
-    house_line.set_label('House Power')
-    solar_line, = plt.plot(sub.data["solar_time"], sub.data["solar_power"], '-o', alpha=0.8, c='r', markersize=2)
-    solar_line.set_label('Solar Power')
-    battery_line, = plt.plot(control.control_data["control_time"], control.control_data["bat_power"],
-                             '-o', alpha=0.8, c='g', markersize=2)
-    battery_line.set_label('Battery Power')
-    grid_line, = plt.plot(control.control_data["control_time"], control.control_data["grid"],
-                          '-o', alpha=0.8, c='m', markersize=2)
-    if control.display_grid:
-        grid_line.set_label('Grid Power')
-    plt.legend()
-
-    house_x = list()
-    house_y = list()
-    solar_x = list()
-    solar_y = list()
-    battery_x = list()
-    battery_y = list()
-    grid_x = list()
-    grid_y = list()
-
-    # MAIN LOOP
     print('Starting Control System')
-    while True:
-        # Boolean Variables
-        bat_connect = sub.bat_SOC == b'bat_connect'
-        solar_connect = sub.solar_power == b'solar_connect'
-        house_connect = sub.house_power == b'house_connect'
 
-        initial_connect = bat_connect and solar_connect and house_connect
-        connect_check = bat_connect or solar_connect or house_connect
-        all_read = sub.battery_read == 1 and sub.solar_read == 1 and sub.house_read == 1
+    # FIRST CONNECTION LOOP
+    while connected is False:
 
-        # Initial Connection Check
-        if all_read:
-            first_read = True
+        # Checks for Initial Connection Values
+        bat_connect = data.bat_SOC == b'bat_connect'
+        solar_connect = data.solar_power == b'solar_connect'
+        house_connect = data.house_power == b'house_connect'
 
-        if initial_connect:
+        connecting = bat_connect and solar_connect and house_connect
+        residual_connect = bat_connect or solar_connect or house_connect
+
+        # Runs if Initial Connection is Established
+        if connecting:
             control.pub_socket.send_string("%d %s" % (control.pub_topic, 'connected'))
-            sub.initial_time = round(time.time(), 2)
-            control.initial_time = sub.initial_time
+            test = time.time()
+            data.initial_time = round(time.time(), 2)
+            control.initial_time = data.initial_time
+            initial_connect = True
+
+        # Runs if all Subscribers start returning intended values
+        if initial_connect and residual_connect is False:
+            print((24 / 288) / ((time.time() - test) / 3600))
             connected = True
 
-        # Control Loop
-        elif connected and connect_check is False:
-            if control.control_time and first_read:
-                control_step = sub.solar_time_count % int(control.control_time_step / control.control_interval) == 0
-                if control_step and control_check is False:
-                    control.battery_control(sub.bat_SOC, sub.solar_power, sub.house_power, sub.solar_time_count)
-                    control_check = True
-                else:
-                    control_check = False
+    # MAIN LOOP
+    while True:
 
-            elif all_read:
+        # Increases day counters
+        print(((time.time() - data.initial_time) * ts) / 3600)
+        if (((time.time() - data.initial_time) * ts) / 3600) - (24 * data.day_count) >= 24:
+            control.day_count += 1
+            data.day_count += 1
 
-                control.battery_control(sub.bat_SOC, sub.solar_power, sub.house_power, sub.solar_time_count)
+        # CONTROL LOOP
+        all_read = data.battery_read == 1 and data.solar_read == 1 and data.house_read == 1
+        if control.control_time:
 
-                sub.battery_read = 0
-                sub.solar_read = 0
-                sub.house_read = 0
+            # True every control time step
+            control_step = int((time.time() - data.initial_time) * ts) % (control.control_time_step * 60) == 0
 
-            # Data Visualisation
-            # Plot Erasing Functionality
-            if sub.solar_time_count == 266 and control.real_time_plotting is False and plot_erase is False:
-                plot_erase = True
-                solar_erase_index = sub.solar_int
-                house_erase_index = sub.house_int
-                control_erase_index = control.control_int
-            elif (time.time() - sub.initial_time) / 3600 >= 24 and control.real_time_plotting and plot_erase is False:
-                plot_erase = True
-                solar_erase_index = sub.solar_int
-                house_erase_index = sub.house_int
-                control_erase_index = control.control_int
-
-            if plot_erase:
-                house_plot_index = (sub.house_int - house_erase_index) + 1
-                solar_plot_index = (sub.solar_int - solar_erase_index) + 1
-                control_plot_index = (control.control_int - control_erase_index) + 1
-
-            # Real Time Line Plotting
-            if control.real_time_plotting:
-                house_x = sub.data["house_real_time"][house_plot_index:]
-                house_y = sub.data["house_plot"][house_plot_index:]
-                solar_x = sub.data["solar_real_time"][solar_plot_index:]
-                solar_y = sub.data["solar_plot"][solar_plot_index:]
-                battery_x = control.control_data["control_real_time"][control_plot_index:]
-                battery_y = control.control_data["bat_plot"][control_plot_index:]
-                if control.display_grid:
-                    grid_x = control.control_data["control_real_time"][control_plot_index:]
-                    grid_y = control.control_data["grid_plot"][control_plot_index:]
+            # Ensures control isn't applied twice on same condition met
+            if control_step and control_check is False:
+                control.battery_control(data.bat_SOC, data.solar_power, data.house_power, data.solar_time_count)
+                control_check = True
             else:
-                house_x = sub.data["house_time"][house_plot_index:]
-                house_y = sub.data["house_plot"][house_plot_index:]
-                solar_x = sub.data["solar_time"][solar_plot_index:]
-                solar_y = sub.data["solar_plot"][solar_plot_index:]
-                battery_x = control.control_data["control_time"][control_plot_index:]
-                battery_y = control.control_data["bat_plot"][control_plot_index:]
-                if control.display_grid:
-                    grid_x = control.control_data["control_time"][control_plot_index:]
-                    grid_y = control.control_data["grid_plot"][control_plot_index:]
+                control_check = False
 
-            house_line.set_data(house_x, house_y)
-            solar_line.set_data(solar_x, solar_y)
-            battery_line.set_data(battery_x, battery_y)
-            if control.display_grid:
-                grid_line.set_data(grid_x, grid_y)
-            plt.pause(0.001)
+        # Used mainly for simulations
+        elif all_read:
+
+            # Applies Control
+            control.battery_control(data.bat_SOC, data.solar_power, data.house_power, data.solar_time_count)
+
+            # Resets Subscriber Read Values
+            data.battery_read = 0
+            data.solar_read = 0
+            data.house_read = 0
+
+        # DATA VISUALISATION
+        # Plot Erasing Functionality
+        if ((time.time() - data.initial_time) * ts) / 3600 >= 22:
+            if plot_erase is False:
+                solar_erase_index = data.solar_int
+                house_erase_index = data.house_int
+                control_erase_index = control.control_int
+                plot_erase = True
+            plot_index[0] = (data.house_int - house_erase_index) + 1
+            plot_index[1] = (data.solar_int - solar_erase_index) + 1
+            plot_index[2] = (control.control_int - control_erase_index) + 1
+
+        # Real Time Line Plotting
+        plot.update_plot(data.data, control.control_data, plot_index)
+
 
 
 

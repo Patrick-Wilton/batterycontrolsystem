@@ -37,22 +37,24 @@ class Event:
 
 
 class SunSpecDriver:
-    def __init__(self):
+    def __init__(self, config_settings):
 
-        # Driver Settings
-        self.bat_int = 0.1
-        self.solar_int = 0.1
-        self.house_int = 0.1
-
-        self.bat_pub_time = False
-        self.solar_pub_time = False
-        self.house_pub_time = False
-        self.all_pub_time = False
+        # Reads settings configuration file
+        self.settings = config_settings
 
         # Connecting SunSpec Clients
-        self.battery_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8080)
-        self.solar_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8081)
-        self.house_client = ClientDevice(device_type='TCP', slave_id=1, ipaddr='localhost', ipport=8082)
+        self.battery_client = ClientDevice(device_type=self.settings.server["battery"]["device_type"],
+                                           slave_id=self.settings.server["battery"]["slave_id"],
+                                           ipaddr=self.settings.server["battery"]["ipaddr"],
+                                           ipport=self.settings.server["battery"]["ipport"])
+        self.solar_client = ClientDevice(device_type=self.settings.server["solar"]["device_type"],
+                                         slave_id=self.settings.server["solar"]["slave_id"],
+                                         ipaddr=self.settings.server["solar"]["ipaddr"],
+                                         ipport=self.settings.server["solar"]["ipport"])
+        self.house_client = ClientDevice(device_type=self.settings.server["house"]["device_type"],
+                                         slave_id=self.settings.server["house"]["slave_id"],
+                                         ipaddr=self.settings.server["house"]["ipaddr"],
+                                         ipport=self.settings.server["house"]["ipport"])
 
         # Event Classes
         self.bat_event = Event()
@@ -69,14 +71,14 @@ class SunSpecDriver:
         self.bat_write = 0
 
         # ZeroMQ Settings
-        self.bat_port = "8090"
-        self.solar_port = "8091"
-        self.house_port = "8092"
-        self.batterySOC_topic = 0
-        self.solar_topic = 0
-        self.house_topic = 0
-        self.sub_port = "8093"
-        self.batteryW_topic = "0"
+        self.bat_port = str(self.settings.ZeroMQ["battery_SOC_port"])
+        self.solar_port = str(self.settings.ZeroMQ["solar_port"])
+        self.house_port = str(self.settings.ZeroMQ["house_port"])
+        self.sub_port = str(self.settings.ZeroMQ["battery_power_port"])
+        self.batterySOC_topic = self.settings.ZeroMQ["battery_SOC_topic"]
+        self.solar_topic = self.settings.ZeroMQ["solar_topic"]
+        self.house_topic = self.settings.ZeroMQ["solar_topic"]
+        self.batteryW_topic = str(self.settings.ZeroMQ["battery_power_topic"])
 
         # Defines Sockets and Threads
         self.bat_socket = None
@@ -123,7 +125,7 @@ class SunSpecDriver:
         self.bat_sub_thread.start()
 
     def battery_publisher(self):
-        battery_soc_decode = b'\x00\x00'  # TODO set actual init value defined
+        battery_soc_decode = struct.pack(">h", int(self.settings.battery["initial_SOC"]))
         while True:
             # Makes sure initial connection is established
             if self.battery_connect == 0:
@@ -132,7 +134,7 @@ class SunSpecDriver:
                 # SunSpec Reading and Decoding
                 self.bat_read = 1
                 if self.bat_write == 0:
-                    battery_soc_decode = self.battery_client.read(19, 1)
+                    battery_soc_decode = self.battery_client.read(self.settings.server["battery"]["SOCaddr"], 1)
                 else:
                     print('skip battery READ')
                 self.bat_read = 0
@@ -142,11 +144,12 @@ class SunSpecDriver:
                 # ZeroMQ Publishing
                 self.bat_socket.send_string("%d %d" % (self.batterySOC_topic, soc_value))
 
-                if self.bat_pub_time or self.all_pub_time:
-                    time.sleep(self.bat_int)
-                else:
+                # Publishing Method
+                if self.settings.ZeroMQ["use_event_pub"]:
                     self.bat_event.wait()
                     self.bat_event.clear()
+                else:
+                    time.sleep(self.settings.ZeroMQ["battery_pub_time"])
 
     def solar_publisher(self):
         while True:
@@ -155,16 +158,17 @@ class SunSpecDriver:
                 self.solar_socket.send_string("%d %s" % (self.solar_topic, 'solar_connect'))
             else:
                 # SunSpec Reading and Decoding
-                solar_decode = self.solar_client.read(0, 1)
+                solar_decode = self.solar_client.read(self.settings.server["solar"]["poweraddr"], 1)
                 solar_value = np.int16(int.from_bytes(solar_decode, byteorder='big'))
 
                 self.solar_socket.send_string("%d %d" % (self.solar_topic, solar_value))
 
-                if self.solar_pub_time or self.all_pub_time:
-                    time.sleep(self.solar_int)
-                else:
+                # Publishing Method
+                if self.settings.ZeroMQ["use_event_pub"]:
                     self.solar_event.wait()
                     self.solar_event.clear()
+                else:
+                    time.sleep(self.settings.ZeroMQ["solar_pub_time"])
 
     def house_publisher(self):
         while True:
@@ -173,16 +177,17 @@ class SunSpecDriver:
                 self.house_socket.send_string("%d %s" % (self.house_topic, 'house_connect'))
             else:
                 # SunSpec Reading and Decoding
-                house_decode = self.house_client.read(0, 1)
+                house_decode = self.house_client.read(self.settings.server["house"]["poweraddr"], 1)
                 house_value = np.int16(int.from_bytes(house_decode, byteorder='big'))
 
                 self.house_socket.send_string("%d %d" % (self.house_topic, house_value))
 
-                if self.house_pub_time or self.all_pub_time:
-                    time.sleep(self.house_int)
-                else:
+                # Publishing Method
+                if self.settings.ZeroMQ["use_event_pub"]:
                     self.house_event.wait()
                     self.house_event.clear()
+                else:
+                    time.sleep(self.settings.ZeroMQ["house_pub_time"])
 
     def battery_subscriber(self):
         # Connects Subscriber to socket and topic
@@ -204,7 +209,7 @@ class SunSpecDriver:
                 bat_power = int(bat_power)
                 self.bat_write = 1
                 if self.bat_read == 0:
-                    self.battery_client.write(3, struct.pack(">h", bat_power))
+                    self.battery_client.write(self.settings.server["battery"]["poweraddr"], struct.pack(">h", bat_power))
                 else:
                     print('skip battery WRITE')
 

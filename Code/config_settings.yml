@@ -52,10 +52,16 @@ simulation:
   data_file_name: one_day_export.csv
   solar_row_name: asolarp
   house_row_name: aloadp
-  use_real_time: yes
+  time_step: 5 # minutes
+  use_real_time: no
   use_visualisation: yes
   display_grid: yes
+  grid_ref: 0
+  control_dir: Both
 
 # Control system settings
 control:
   control_time_step: 5 # Minutes
+  solar_filtering: yes
+  house_filtering: yes
+  battery_filtering: no

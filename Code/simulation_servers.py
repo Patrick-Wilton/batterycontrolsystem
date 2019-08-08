@@ -73,12 +73,8 @@ class Battery:
         self.SOC = new_soc
         self.data_store[self.SOC_addr] = int(new_soc)
 
-    def return_value(self):
-        return self.SOC
-
     def predict_soc(self, power):
-        old_soc = self.return_value()
-
+        old_soc = self.SOC
         new_soc = old_soc + ((power/self.bat_cap)*self.dt)*100
 
         if new_soc > 100:

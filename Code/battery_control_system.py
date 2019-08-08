@@ -103,14 +103,16 @@ class Subscriber:
         # Time Value
         if self.settings.simulation["use_real_time"]:
             curr_time = (round(time.time() - self.initial_time, 2) / 3600) - (24 * self.day_count)
-            self.data_store[device + "_time"].append(curr_time)
+        elif bool(self.data_store[device + "_time"]) is False:
+            curr_time = 0
         else:
-            curr_time = round((self.data_store[device + "_time"][-1] +
-                               self.settings.simulation["time_step"] / 60) - (24 * self.day_count))
-            self.data_store[device + "_time"].append(curr_time)
+            curr_time = self.data_store[device + "_time"][-1] + self.settings.simulation["time_step"] / 60
+            if curr_time >= 24:
+                curr_time = 0
+        self.data_store[device + "_time"].append(curr_time)
 
         # Plot Value
-        if 24 - self.data_store[device + "_time"][-1] >= 0.1:
+        if 24 - self.data_store[device + "_time"][-1] <= 0.1:
             self.data_store[device + "_plot"].append(np.nan)
         else:
             self.data_store[device + "_plot"].append(value / 1000)
@@ -213,8 +215,6 @@ class Subscriber:
                 self.write_to_text("house", curr_time, self.house_power)
                 self.update_data_store("house", self.house_power)
 
-                print(1)
-
                 # Sets Reading and Increases Counter
                 self.house_num += 1
                 self.house_read = 1
@@ -268,14 +268,16 @@ class Publisher:
         # Time Value
         if self.settings.simulation["use_real_time"]:
             curr_time = (round(time.time() - self.initial_time, 2) / 3600) - (24 * self.day_count)
-            self.data_store[device + "_time"].append(curr_time)
+        elif bool(self.data_store[device + "_time"]) is False:
+            curr_time = 0
         else:
-            curr_time = round((self.data_store[device + "_time"][-1] +
-                               self.settings.simulation["time_step"] / 60) - (24 * self.day_count))
-            self.data_store[device + "_time"].append(curr_time)
+            curr_time = self.data_store[device + "_time"][-1] + self.settings.simulation["time_step"] / 60
+            if curr_time >= 24:
+                curr_time = 0
+        self.data_store[device + "_time"].append(curr_time)
 
         # Plot Value
-        if 24 - self.data_store[device + "_time"][-1] >= 0.1:
+        if 24 - self.data_store[device + "_time"][-1] <= 0.1:
             self.data_store[device + "_plot"].append(np.nan)
         else:
             self.data_store[device + "_plot"].append(power / 1000)
@@ -343,10 +345,10 @@ class KalmanFilter:
 
 
 class DataVisualisation:
-    def __init__(self, config_settimgs):
+    def __init__(self, config_settings):
 
         # Obtains Settings from Config File
-        self.settings = config_settimgs
+        self.settings = config_settings
 
         # Plot Settings and Initial Values
         self.display_grid = self.settings.simulation["display_grid"]
@@ -391,17 +393,20 @@ class DataVisualisation:
         # Obtains the current time
         if self.settings.simulation["use_real_time"]:
             curr_time = (round(time.time() - self.initial_time, 2) / 3600) - (24 * self.day_count)
+        elif bool(house_time) is False:
+            curr_time = 0
         else:
-            curr_time = house_time
+            curr_time = house_time[-1]
 
-        if curr_time >= 22:
-            if self.plot_erase is False:
-                self.b_index = b
-                self.s_index = s
-                self.h_index = h
-                self.g_index = g
-                self.p_index = p
-                self.plot_erase = True
+        if curr_time >= 22 and self.plot_erase is False:
+            self.b_index = b
+            self.s_index = s
+            self.h_index = h
+            self.g_index = g
+            self.p_index = p
+            self.plot_erase = True
+
+        if self.plot_erase:
             self.plot_index[0] = (b - self.b_index) + 1
             self.plot_index[1] = (s - self.s_index) + 1
             self.plot_index[2] = (h - self.h_index) + 1
@@ -443,18 +448,25 @@ class ControlLoop:
         self.plot = DataVisualisation(config_settings)
 
         # Sets Boolean Parameters
-        self.plot_erase = False
         self.control_check = False
         self.initial_connect = False
         self.connected = False
 
-    def update_day_counter(self):
+    def current_time(self):
 
         # Obtains the current time
         if self.settings.simulation["use_real_time"]:
             curr_time = (round(time.time() - self.sub.initial_time, 2) / 3600) - (24 * self.sub.day_count)
+        elif bool(self.sub.data_store["house_time"]) is False:
+            curr_time = 0
         else:
             curr_time = self.sub.data_store["house_time"][-1]
+        return curr_time
+
+    def update_day_counter(self):
+
+        # Obtains the current time
+        curr_time = self.current_time()
 
         # Checks if it has been 24 hours
         if curr_time >= 24:
@@ -507,17 +519,19 @@ class ControlLoop:
 
         # Runs if event based publishing is OFF
         if self.settings.ZeroMQ["use_event_pub"] is False:
-            print('testing')
 
             # True every control time step
-            #control_step = int((time.time() - data.initial_time) * ts) % (control.control_time_step * 60) == 0
+            curr_time = self.current_time()
+            apply_control = curr_time % (self.settings.control["control_time_step"] / 60) < 0.1
 
             # Ensures control isn't applied twice on same condition met
-            #if control_step and control_check is False:
-            #    control.battery_control(data.bat_SOC, data.solar_power, data.house_power, data.solar_time_count)
-            #    control_check = True
-            #else:
-            #    control_check = False
+            if apply_control and self.control_check is False:
+
+                # Applies Control
+                self.no_optimiser_control()
+                self.control_check = True
+            else:
+                self.control_check = False
 
         # Used mainly for simulations
         elif all_read:
@@ -538,8 +552,6 @@ if __name__ == '__main__':
     control = ControlLoop(settings)
     drivers = SunSpecDriver(settings)
 
-    time.sleep(2)
-
     print('Connecting')
     control.connection_loop()
 
@@ -547,9 +559,16 @@ if __name__ == '__main__':
     # MAIN LOOP
     while True:
         control.update_day_counter()
+
         control.control_loop()
-        print(control.sub.data_store["house_time"])
-        # control.plot.update_erase_index(control.sub.data_store["house_time"][-1], control.sub.soc_num, control.sub.solar_num, control.sub.house_num, control.pub.pub_num, control.pub.pub_num)
+
+        control.plot.update_erase_index(control.sub.data_store["house_time"],
+                                        control.sub.soc_num,
+                                        control.sub.solar_num,
+                                        control.sub.house_num,
+                                        control.pub.pub_num,
+                                        control.pub.pub_num)
+
         control.plot.update_plot(control.sub.data_store, control.pub.data_store)
 
 

@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from Code.simulation_client import SunSpecDriver
+from Code.optimiser_model import Optimiser
 
 
 class Settings:
@@ -446,11 +447,22 @@ class ControlLoop:
         self.sub = Subscriber(config_settings)
         self.pub = Publisher(config_settings)
         self.plot = DataVisualisation(config_settings)
+        self.optimiser = Optimiser(config_settings)
 
         # Sets Boolean Parameters
         self.control_check = False
         self.initial_connect = False
         self.connected = False
+
+        # Creates 24 hour data stores and filters
+        self.power = None
+        self.load = list(self.optimiser.load)
+        self.pv = list(self.optimiser.pv)
+        self.import_tariff = list(self.optimiser.import_tariff.values())
+        self.export_tariff = list(self.optimiser.export_tariff.values())
+
+        self.load_filter = None
+        self.pv_filter = None
 
     def current_time(self):
 
@@ -474,6 +486,42 @@ class ControlLoop:
             self.pub.day_count += 1
             self.plot.day_count += 1
 
+    def update_24_data(self):
+
+        # Applies filters and removes last entries (solar and load)
+        if len(self.load) == (60 / self.settings.control["data_time_step"]) * 24:
+
+            # Create Filters
+            self.load_filter = KalmanFilter(1, 0, 1, self.load[0], 1, 0.05, 1)
+            self.pv_filter = KalmanFilter(1, 0, 1, self.pv[0], 1, 0.05, 1)
+
+            # Apply Filters
+            self.load_filter.step(0, self.sub.house_power / 1000)
+            self.pv_filter.step(0, self.sub.solar_power / 1000)
+
+            # Remove First Value
+            self.load.pop(0)
+            self.pv.pop(0)
+
+            # Append new values
+            self.load.append(self.load_filter.current_state())
+            self.pv.append(self.pv_filter.current_state())
+        else:
+            # Append new values
+            self.load.append(self.sub.house_power / 1000)
+            self.pv.append(self.sub.solar_power / 1000)
+
+        # Update Tariffs
+        self.import_tariff.append(self.import_tariff.pop(0))
+        self.export_tariff.append(self.export_tariff.pop(0))
+
+        # Update profile classes and energy system
+        self.optimiser.update_profiles(np.array(self.load),
+                                       np.array(self.pv),
+                                       np.array(self.import_tariff),
+                                       np.array(self.export_tariff))
+        self.optimiser.update_energy_system()
+
     def no_optimiser_control(self):
 
         # Calculates new grid value
@@ -488,6 +536,16 @@ class ControlLoop:
 
         # Publishes Value
         self.pub.publish_power()
+
+    def optimiser_control(self):
+
+        # Applies Control
+        self.optimiser.optimise()
+        self.power = list(self.optimiser.return_battery_power())
+        print(np.sum(self.power))
+
+        # Sets new power
+        self.pub.set_power(self.power[0] * 1000)
 
     def connection_loop(self):
         while self.connected is False:
@@ -518,7 +576,7 @@ class ControlLoop:
         all_read = self.sub.battery_read == 1 and self.sub.solar_read == 1 and self.sub.house_read == 1
 
         # Runs if event based publishing is OFF
-        if self.settings.ZeroMQ["use_event_pub"] is False:
+        if self.settings.ZeroMQ["use_event_pub"] is False:  # TODO: section not entirely working with new system (optimiser)
 
             # True every control time step
             curr_time = self.current_time()
@@ -537,7 +595,31 @@ class ControlLoop:
         elif all_read:
 
             # Applies Control
-            self.no_optimiser_control()
+            if self.settings.control["optimiser"]:
+                if len(self.load) == (60 / self.settings.control["data_time_step"]) * 24:
+                    # Calculates new grid value
+                    self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
+
+                    # Updates Data Stores
+                    self.pub.update_data_store("grid", self.pub.grid)
+                    self.pub.update_data_store("bat", self.pub.bat_power)
+
+                    self.optimiser_control()
+                    self.update_24_data()
+                    self.pub.publish_power()
+                else:
+                    # Calculates new grid value
+                    self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
+
+                    # Updates Data Stores
+                    self.pub.update_data_store("grid", self.pub.grid)
+                    self.pub.update_data_store("bat", self.pub.bat_power)
+
+                    self.pub.set_power(0)
+                    self.update_24_data()
+                    self.pub.publish_power()
+            else:
+                self.no_optimiser_control()
 
             # Resets Subscriber Read Values
             self.sub.battery_read = 0

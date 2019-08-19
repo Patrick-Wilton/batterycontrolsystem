@@ -208,9 +208,8 @@ class Servers:
         self.settings = Settings()
 
         # Setting up Data
-        self.battery_data = []
-        self.solar_data = []
-        self.house_data = []
+        self.solar_data = list()
+        self.house_data = list()
 
         # Servers Variables
         self.battery = None
@@ -240,4 +239,3 @@ if __name__ == '__main__':
     # Starting Server Simulations
     servers = Servers()
     servers.start()
-

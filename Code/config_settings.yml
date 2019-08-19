@@ -61,7 +61,11 @@ simulation:
 
 # Control system settings
 control:
-  control_time_step: 5 # Minutes
+  control_time_step: 5 # minutes
+  data_time_step: 5 # minutes
   solar_filtering: yes
   house_filtering: yes
   battery_filtering: no
+  optimiser: yes
+  initial_optimiser_prediction: no
+  objective: Peak

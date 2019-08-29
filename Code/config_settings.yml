@@ -41,7 +41,7 @@ battery:
   max_capacity: 6.2
   DOD_limit: 0
   charging_power_limit: 5.0
-  discharging_power_limit: 5.0
+  discharging_power_limit: -5.0
   charging_efficiency: 1
   discharging_efficiency: 1
   throughput_cost: 0.018
@@ -56,16 +56,17 @@ simulation:
   use_real_time: no
   use_visualisation: yes
   display_grid: yes
+  display_SOC: yes
   grid_ref: 0
   control_dir: Both
 
 # Control system settings
 control:
-  control_time_step: 5 # minutes
+  control_time_step: 60 # minutes
   data_time_step: 5 # minutes
   solar_filtering: yes
   house_filtering: yes
   battery_filtering: no
   optimiser: yes
-  initial_optimiser_prediction: no
+  initial_optimiser_prediction: yes
   objective: Peak

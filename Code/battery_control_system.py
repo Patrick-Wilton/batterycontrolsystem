@@ -99,7 +99,10 @@ class Subscriber:
     def update_data_store(self, device, value):
 
         # New Value
-        self.data_store[device + "_value"].append(value / 1000)
+        if device == "soc":
+            self.data_store[device + "_value"].append(value)
+        else:
+            self.data_store[device + "_value"].append(value / 1000)
 
         # Time Value
         if self.settings.simulation["use_real_time"]:
@@ -116,7 +119,10 @@ class Subscriber:
         if 24 - self.data_store[device + "_time"][-1] <= 0.1:
             self.data_store[device + "_plot"].append(np.nan)
         else:
-            self.data_store[device + "_plot"].append(value / 1000)
+            if device == "soc":
+                self.data_store[device + "_plot"].append(value / (100 / 6))
+            else:
+                self.data_store[device + "_plot"].append(value / 1000)
 
     def start_subscribers(self):
 
@@ -353,6 +359,7 @@ class DataVisualisation:
 
         # Plot Settings and Initial Values
         self.display_grid = self.settings.simulation["display_grid"]
+        self.display_soc = self.settings.simulation["display_SOC"]
         self.initial_time = 0
         self.day_count = 0
         self.plot_erase = False
@@ -378,15 +385,18 @@ class DataVisualisation:
         ref_line.set_label('Reference Grid Power')
 
         # Initialises Line Graphs
+        self.soc_line, = plt.plot([], [], '-o', alpha=0.8, c='y', markersize=2)
+        if self.display_soc:
+            self.soc_line.set_label('State of Charge')
+        self.grid_line, = plt.plot([], [], '-o', alpha=0.8, c='m', markersize=2)
+        if self.display_grid:
+            self.grid_line.set_label('Grid Power')
+        self.battery_line, = plt.plot([], [], '-o', alpha=0.8, c='g', markersize=2)
+        self.battery_line.set_label('Battery Power')
         self.house_line, = plt.plot([], [], '-o', alpha=0.8, c='b', markersize=2)
         self.house_line.set_label('House Power')
         self.solar_line, = plt.plot([], [], '-o', alpha=0.8, c='r', markersize=2)
         self.solar_line.set_label('Solar Power')
-        self.battery_line, = plt.plot([], [], '-o', alpha=0.8, c='g', markersize=2)
-        self.battery_line.set_label('Battery Power')
-        self.grid_line, = plt.plot([], [], '-o', alpha=0.8, c='m', markersize=2)
-        if self.display_grid:
-            self.grid_line.set_label('Grid Power')
         plt.legend()
 
     def update_erase_index(self, house_time, b, s, h, g, p):
@@ -416,6 +426,18 @@ class DataVisualisation:
 
     def update_plot(self, sub_data, pub_data):
 
+        # Update soc line if necessary
+        if self.display_soc:
+            soc_x = sub_data["soc_time"][self.plot_index[0]:]
+            soc_y = sub_data["soc_plot"][self.plot_index[0]:]
+            self.soc_line.set_data(soc_x, soc_y)
+
+        # Updates grid line if necessary
+        if self.display_grid:
+            grid_x = pub_data["grid_time"][self.plot_index[3]:]
+            grid_y = pub_data["grid_plot"][self.plot_index[3]:]
+            self.grid_line.set_data(grid_x, grid_y)
+
         # Sets x and y values for house, solar and battery lines
         solar_x = sub_data["solar_time"][self.plot_index[1]:]
         solar_y = sub_data["solar_plot"][self.plot_index[1]:]
@@ -428,12 +450,6 @@ class DataVisualisation:
         self.house_line.set_data(house_x, house_y)
         self.solar_line.set_data(solar_x, solar_y)
         self.battery_line.set_data(battery_x, battery_y)
-
-        # Updates grid line if necessary
-        if self.display_grid:
-            grid_x = pub_data["grid_time"][self.plot_index[3]:]
-            grid_y = pub_data["grid_plot"][self.plot_index[3]:]
-            self.grid_line.set_data(grid_x, grid_y)
 
         # Update plot
         plt.pause(0.001)
@@ -450,9 +466,16 @@ class ControlLoop:
         self.optimiser = Optimiser(config_settings)
 
         # Sets Boolean Parameters
-        self.control_check = False
+        self.control_mod = False
+        self.data_mod = False
         self.initial_connect = False
         self.connected = False
+
+        # Sets internal parameters
+        self.mod_thresh = 0.002
+        self.optimiser_index = 0
+        self.prev_house_data = None
+        self.prev_house_control = None
 
         # Creates 24 hour data stores and filters
         self.power = None
@@ -522,31 +545,6 @@ class ControlLoop:
                                        np.array(self.export_tariff))
         self.optimiser.update_energy_system()
 
-    def no_optimiser_control(self):
-
-        # Calculates new grid value
-        self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
-
-        # Updates Data Stores
-        self.pub.update_data_store("grid", self.pub.grid)
-        self.pub.update_data_store("bat", self.pub.bat_power)
-
-        # Applies Control
-        self.pub.non_optimiser_control(self.sub.bat_SOC)
-
-        # Publishes Value
-        self.pub.publish_power()
-
-    def optimiser_control(self):
-
-        # Applies Control
-        self.optimiser.optimise()
-        self.power = list(self.optimiser.return_battery_power())
-        print(np.sum(self.power))
-
-        # Sets new power
-        self.pub.set_power(self.power[0] * 1000)
-
     def connection_loop(self):
         while self.connected is False:
 
@@ -570,61 +568,118 @@ class ControlLoop:
                 self.pub.initial_time = self.sub.initial_time
                 self.plot.initial_time = self.sub.initial_time
 
-    def control_loop(self):
+    def main_loop(self):
 
         # Checks if all subscribers have new values
         all_read = self.sub.battery_read == 1 and self.sub.solar_read == 1 and self.sub.house_read == 1
 
+        # Obtains the current time
+        curr_time = self.current_time()
+
+        # True every time step
+        curr_data_mod = curr_time % (self.settings.control["data_time_step"] / 60)
+        self.data_mod = curr_data_mod < self.mod_thresh or \
+                           (self.settings.control["data_time_step"] / 60) - curr_data_mod < self.mod_thresh
+
+        # True every control time step
+        curr_control_mod = curr_time % (self.settings.control["control_time_step"] / 60)
+        self.control_mod = curr_control_mod < self.mod_thresh or \
+                           (self.settings.control["control_time_step"] / 60) - curr_control_mod < self.mod_thresh
+
         # Runs if event based publishing is OFF
         if self.settings.ZeroMQ["use_event_pub"] is False:  # TODO: section not entirely working with new system (optimiser)
 
-            # True every control time step
-            curr_time = self.current_time()
-            apply_control = curr_time % (self.settings.control["control_time_step"] / 60) < 0.1
-
-            # Ensures control isn't applied twice on same condition met
-            if apply_control and self.control_check is False:
-
-                # Applies Control
-                self.no_optimiser_control()
-                self.control_check = True
-            else:
-                self.control_check = False
+            # Applies Control if necessary
+            self.apply_control()
 
         # Used mainly for simulations
         elif all_read:
 
-            # Applies Control
-            if self.settings.control["optimiser"]:
-                if len(self.load) == (60 / self.settings.control["data_time_step"]) * 24:
-                    # Calculates new grid value
-                    self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
-
-                    # Updates Data Stores
-                    self.pub.update_data_store("grid", self.pub.grid)
-                    self.pub.update_data_store("bat", self.pub.bat_power)
-
-                    self.optimiser_control()
-                    self.update_24_data()
-                    self.pub.publish_power()
-                else:
-                    # Calculates new grid value
-                    self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
-
-                    # Updates Data Stores
-                    self.pub.update_data_store("grid", self.pub.grid)
-                    self.pub.update_data_store("bat", self.pub.bat_power)
-
-                    self.pub.set_power(0)
-                    self.update_24_data()
-                    self.pub.publish_power()
-            else:
-                self.no_optimiser_control()
+            # Applies Control if necessary
+            self.apply_control()
 
             # Resets Subscriber Read Values
             self.sub.battery_read = 0
             self.sub.solar_read = 0
             self.sub.house_read = 0
+
+    def apply_control(self):
+
+        # Obtains current house time
+        if bool(self.sub.data_store["house_time"]) is False:
+            curr_time = 0
+        else:
+            curr_time = self.sub.data_store["house_time"][-1]
+
+        # Runs optimiser control
+        if self.settings.control["optimiser"]:
+            if len(self.load) == (60 / self.settings.control["data_time_step"]) * 24:
+                # Calculates new grid value
+                self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
+
+                # Updates Data Stores
+                if self.data_mod and curr_time != self.prev_house_data:
+                    self.pub.update_data_store("grid", self.pub.grid)
+                    self.pub.update_data_store("bat", self.pub.bat_power)
+
+                # Ensures control isn't applied twice on same condition met
+                if self.control_mod and curr_time != self.prev_house_control:
+
+                    # Applies Control
+                    self.optimiser.optimise()
+                    self.power = list(self.optimiser.return_battery_power())
+                    self.optimiser_index = 0
+                    self.prev_house_control = curr_time
+
+                # Sets new power
+                self.pub.set_power(self.power[self.optimiser_index] * 1000)
+
+                # Ensures data isn't updated twice on same condition met
+                if self.data_mod and curr_time != self.prev_house_data:
+
+                    # Updates optimiser index
+                    self.optimiser_index += 1
+                    self.update_24_data()
+                    self.prev_house_data = curr_time
+
+                # Updates data and publishes power
+                self.pub.publish_power()
+            else:
+                # Calculates new grid value
+                self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
+
+                # Updates Data Stores
+                if self.data_mod and curr_time != self.prev_house_data:
+                    self.pub.update_data_store("grid", self.pub.grid)
+                    self.pub.update_data_store("bat", self.pub.bat_power)
+
+                # Updates data and publishes power
+                self.pub.set_power(0)
+                if self.data_mod and curr_time != self.prev_house_data:
+                    self.update_24_data()
+                    self.prev_house_data = curr_time
+                self.pub.publish_power()
+
+        # Runs non-optimiser control
+        else:
+            # Calculates new grid value
+            self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
+
+            # Updates Data Stores
+            if self.data_mod and curr_time != self.prev_house_data:
+                self.pub.update_data_store("grid", self.pub.grid)
+                self.pub.update_data_store("bat", self.pub.bat_power)
+                self.prev_house_data = curr_time
+
+            # Ensures control isn't applied twice on same condition met
+            if self.control_mod and curr_time != self.prev_house_control:
+
+                # Applies Control
+                self.pub.non_optimiser_control(self.sub.bat_SOC)
+                self.prev_house_control = curr_time
+
+            # Publishes Value
+            self.pub.publish_power()
 
 
 if __name__ == '__main__':
@@ -642,7 +697,7 @@ if __name__ == '__main__':
     while True:
         control.update_day_counter()
 
-        control.control_loop()
+        control.main_loop()
 
         control.plot.update_erase_index(control.sub.data_store["house_time"],
                                         control.sub.soc_num,

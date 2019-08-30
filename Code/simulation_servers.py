@@ -66,7 +66,7 @@ class Battery:
         self.SOC = self.initial_soc
         self.data_store[self.SOC_addr] = self.initial_soc
 
-        self.dt = self.settings.control["control_time_step"] / 60
+        self.dt = self.settings.control["data_time_step"] / 60
         self.bat_cap = self.settings.battery["max_capacity"] * 1000
 
     def set_value(self, new_soc):

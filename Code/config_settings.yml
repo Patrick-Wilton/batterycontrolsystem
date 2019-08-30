@@ -38,7 +38,7 @@ ZeroMQ:
 
 # Physical battery characteristics
 battery:
-  max_capacity: 6.2
+  max_capacity: 15.0
   DOD_limit: 0
   charging_power_limit: 5.0
   discharging_power_limit: -5.0

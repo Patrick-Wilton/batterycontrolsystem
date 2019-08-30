@@ -380,9 +380,15 @@ class DataVisualisation:
         plt.grid(True)
         plt.ion()
 
-        # Creates Reference Line
-        ref_line = plt.hlines(self.settings.simulation["grid_ref"] / 1000, 0, 24, linestyles='dashed')
-        ref_line.set_label('Reference Grid Power')
+        # Creates Reference Lines
+        if self.settings.control["optimiser"]:
+            soc_ref = plt.hlines(6, 0, 24, linestyles='dashed')
+            soc_ref.set_label('100% State of Charge')
+        else:
+            ref_line = plt.hlines(self.settings.simulation["grid_ref"] / 1000, 0, 24, linestyles='dashed')
+            ref_line.set_label('Reference Grid Power')
+            soc_ref = plt.hlines(6, 0, 24, linestyles='dashed')
+            soc_ref.set_label('100% State of Charge')
 
         # Initialises Line Graphs
         self.soc_line, = plt.plot([], [], '-o', alpha=0.8, c='y', markersize=2)
@@ -519,8 +525,8 @@ class ControlLoop:
             self.pv_filter = KalmanFilter(1, 0, 1, self.pv[0], 1, 0.05, 1)
 
             # Apply Filters
-            self.load_filter.step(0, self.sub.house_power / 1000)
-            self.pv_filter.step(0, self.sub.solar_power / 1000)
+            self.load_filter.step(0, self.sub.house_power / (1000 * 12))
+            self.pv_filter.step(0, self.sub.solar_power / (1000 * 12))
 
             # Remove First Value
             self.load.pop(0)
@@ -542,7 +548,8 @@ class ControlLoop:
         self.optimiser.update_profiles(np.array(self.load),
                                        np.array(self.pv),
                                        np.array(self.import_tariff),
-                                       np.array(self.export_tariff))
+                                       np.array(self.export_tariff),
+                                       self.sub.bat_SOC)
         self.optimiser.update_energy_system()
 
     def connection_loop(self):
@@ -632,7 +639,7 @@ class ControlLoop:
                     self.prev_house_control = curr_time
 
                 # Sets new power
-                self.pub.set_power(self.power[self.optimiser_index] * 1000)
+                self.pub.set_power(self.power[self.optimiser_index] * 1000 * 12)
 
                 # Ensures data isn't updated twice on same condition met
                 if self.data_mod and curr_time != self.prev_house_data:

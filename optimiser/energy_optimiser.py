@@ -20,8 +20,8 @@ class OptimiserObjective(object):
     PiecewiseLinear = 10
     
 class OptimiserObjectiveSet(object):
-    FinancialOptimisation = [OptimiserObjective.ConnectionPointCost,
-                             #OptimiserObjective.GreedySolarCharging,
+    FinancialOptimisation = [#OptimiserObjective.ConnectionPointCost,
+                             OptimiserObjective.GreedySolarCharging,
                              OptimiserObjective.ThroughputCost,
                              OptimiserObjective.EqualStorageActions]
 
@@ -428,4 +428,4 @@ class EnergyOptimiser(object):
             opt = SolverFactory(self.optimiser_engine)
 
         # Solve the optimisation
-        results = opt.solve(self.model)
+        self.results = opt.solve(self.model)

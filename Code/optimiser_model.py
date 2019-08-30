@@ -44,7 +44,8 @@ class Optimiser:
                                      discharging_power_limit=self.settings.battery["discharging_power_limit"],
                                      charging_efficiency=self.settings.battery["charging_efficiency"],
                                      discharging_efficiency=self.settings.battery["discharging_efficiency"],
-                                     throughput_cost=self.settings.battery["throughput_cost"])
+                                     throughput_cost=self.settings.battery["throughput_cost"],
+                                     initial_state_of_charge=self.settings.battery["initial_SOC"])
 
         # Creates Energy System and Model
         self.energy_system = EnergySystem()
@@ -61,13 +62,16 @@ class Optimiser:
             self.load = np.array(list())
             self.pv = np.array(list())
 
+        self.load /= 12
+        self.pv /= 12
+
         # Creates load and solar profiles
         self.load_profile = Load()
         self.pv_profile = PV()
 
         # Creates Tariffs
-        self.time_step = self.settings.control["data_time_step"]
-        self.total_steps = (60 / self.time_step) * 24
+        self.time_step = 15 #self.settings.control["data_time_step"]
+        self.total_steps = (60 / self.time_step) * 24 * 3
 
         import_tariff = np.array(([0.1] * 84 + [0.3] * 24 + [0.2] * 96 + [0.3] * 48 + [0.1] * 36))  # MAGIC NUMS
         export_tariff = np.array(([0.0] * 288))  # MAGIC NUMS
@@ -85,7 +89,11 @@ class Optimiser:
         self.set_objective()
 
         # Performs Initial Profile and Energy System Set
-        self.update_profiles(self.load, self.pv, self.import_tariff, self.export_tariff)
+        self.update_profiles(self.load,
+                             self.pv,
+                             self.import_tariff,
+                             self.export_tariff,
+                             self.settings.battery["initial_SOC"])
         self.update_energy_system()
 
     def set_objective(self):
@@ -99,12 +107,15 @@ class Optimiser:
             self.objective = OptimiserObjectiveSet.QuantisedPeakOptimisation
         elif self.settings.control["objective"] == "Dispatch":
             self.objective = OptimiserObjectiveSet.DispatchOptimisation
+        else:
+            print('not a setting')
 
-    def update_profiles(self, load, pv, imp, exp):
+    def update_profiles(self, load, pv, imp, exp, soc):
         self.load_profile.add_load_profile(load)
         self.pv_profile.add_pv_profile(pv)
         self.tariff_profile.add_tariff_profile_import(imp)
         self.tariff_profile.add_tariff_profile_export(exp)
+        self.battery.initial_state_of_charge = soc / (100 / self.battery.max_capacity)
 
     def update_energy_system(self):
         self.energy_system.add_load(self.load_profile)
@@ -112,18 +123,6 @@ class Optimiser:
         self.energy_system.add_tariff(self.tariff_profile)
 
     def optimise(self):
-        # print('time step')
-        # print(self.time_step)
-        # print('total time steps')
-        # print(self.total_steps)
-        # print('load')
-        # print(self.energy_system.load.load)
-        # print('pv')
-        # print(self.energy_system.pv.pv)
-        # print('imp')
-        # print(self.energy_system.tariff.import_tariff)
-        # print('exp')
-        # print(self.energy_system.tariff.export_tariff)
 
         optimiser = EnergyOptimiser(self.time_step, self.total_steps, self.energy_system, self.objective)
         self.model = optimiser.model

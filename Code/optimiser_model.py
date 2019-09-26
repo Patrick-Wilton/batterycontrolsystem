@@ -19,9 +19,9 @@ class InitialPrediction:
         self.house_data = list()
 
         # Data File Names
-        file_name = self.settings.simulation["data_file_name"]
-        solar_name = self.settings.simulation["solar_row_name"]
-        house_name = self.settings.simulation["house_row_name"]
+        file_name = self.settings.control["data_file_name"]
+        solar_name = self.settings.control["solar_row_name"]
+        house_name = self.settings.control["house_row_name"]
 
         # Reading CSV File
         with open(file_name, mode='r') as csv_file:
@@ -52,6 +52,8 @@ class Optimiser:
         self.energy_system.add_energy_storage(self.battery)
         self.model = None
         self.num_output_variables = 12
+        self.time_step = self.settings.control["data_time_step"]
+        self.total_steps = (60 / self.time_step) * 24
 
         # Creates Initial Optimiser Prediction (24 hours of data)
         if self.settings.control["initial_optimiser_prediction"]:
@@ -61,18 +63,14 @@ class Optimiser:
         else:
             self.load = np.array(list())
             self.pv = np.array(list())
-
-        self.load /= 12
-        self.pv /= 12
+        self.load /= (60 / self.time_step)
+        self.pv /= (60 / self.time_step)
 
         # Creates load and solar profiles
         self.load_profile = Load()
         self.pv_profile = PV()
 
         # Creates Tariffs
-        self.time_step = 15 #self.settings.control["data_time_step"]
-        self.total_steps = (60 / self.time_step) * 24 * 3
-
         import_tariff = np.array(([0.1] * 84 + [0.3] * 24 + [0.2] * 96 + [0.3] * 48 + [0.1] * 36))  # MAGIC NUMS
         export_tariff = np.array(([0.0] * 288))  # MAGIC NUMS
 

@@ -9,6 +9,7 @@ TCP function codes:
 """
 
 import csv
+import yaml
 import logging
 import threading
 from collections import defaultdict
@@ -18,7 +19,13 @@ from umodbus import conf
 from umodbus.server.tcp import RequestHandler, get_server
 from umodbus.utils import log_to_stream
 
-from Code.battery_control_system import Settings
+
+class Settings:
+    def __init__(self):
+        with open("config_settings.yml", 'r') as yml_file:
+            yml_dict = yaml.load(yml_file, Loader=yaml.FullLoader)
+        for k, v in yml_dict.items():
+            setattr(self, k, v)
 
 
 class Battery:

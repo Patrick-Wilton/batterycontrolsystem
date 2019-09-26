@@ -61,10 +61,16 @@ class SunSpecDriver:
         self.solar_event = Event()
         self.house_event = Event()
 
+        # Publisher Time Variables
+        self.bat_time = self.settings.ZeroMQ["battery_pub_time"]
+        self.solar_time = self.settings.ZeroMQ["solar_pub_time"]
+        self.house_time = self.settings.ZeroMQ["house_pub_time"]
+
         # Connection Variables
         self.battery_connect = 0
         self.solar_connect = 0
         self.house_connect = 0
+        self.initial_time = None
 
         # Parameters in case of simultaneous battery read and writes
         self.bat_read = 0
@@ -149,7 +155,7 @@ class SunSpecDriver:
                     self.bat_event.wait()
                     self.bat_event.clear()
                 else:
-                    time.sleep(self.settings.ZeroMQ["battery_pub_time"])
+                    time.sleep(self.bat_time - ((time.time() - self.initial_time) % self.bat_time))
 
     def solar_publisher(self):
         while True:
@@ -168,7 +174,7 @@ class SunSpecDriver:
                     self.solar_event.wait()
                     self.solar_event.clear()
                 else:
-                    time.sleep(self.settings.ZeroMQ["solar_pub_time"])
+                    time.sleep(self.solar_time - ((time.time() - self.initial_time) % self.solar_time))
 
     def house_publisher(self):
         while True:
@@ -187,7 +193,7 @@ class SunSpecDriver:
                     self.house_event.wait()
                     self.house_event.clear()
                 else:
-                    time.sleep(self.settings.ZeroMQ["house_pub_time"])
+                    time.sleep(self.house_time - ((time.time() - self.initial_time) % self.house_time))
 
     def battery_subscriber(self):
         # Connects Subscriber to socket and topic
@@ -201,6 +207,7 @@ class SunSpecDriver:
 
             # Makes sure initial connection is established
             if bat_power == b'connected':
+                self.initial_time = time.time()
                 self.battery_connect = 1
                 self.solar_connect = 1
                 self.house_connect = 1

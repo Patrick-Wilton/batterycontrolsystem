@@ -38,7 +38,7 @@ ZeroMQ:
 
 # Physical battery characteristics
 battery:
-  max_capacity: 6.2
+  max_capacity: 8
   DOD_limit: 0
   charging_power_limit: 5.0
   discharging_power_limit: -5.0
@@ -55,8 +55,8 @@ simulation:
   time_step: 5 # minutes
   use_real_time: no
   use_visualisation: yes
-  display_grid: no
-  display_SOC: no
+  display_grid: yes
+  display_SOC: yes
   grid_ref: 0
   control_dir: Both
 
@@ -64,12 +64,12 @@ simulation:
 control:
   control_time_step: 60 # minutes
   data_time_step: 5 # minutes
-  solar_filtering: no
-  house_filtering: no
+  solar_filtering: yes
+  house_filtering: yes
   battery_filtering: no
   optimiser: yes
   initial_optimiser_prediction: no
   data_file_name: one_day_export.csv
   solar_row_name: asolarp
   house_row_name: aloadp
-  objective: Peak
+  objective: QuantisedPeak

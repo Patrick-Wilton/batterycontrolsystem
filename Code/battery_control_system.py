@@ -50,14 +50,14 @@ class DataVisualisation:
         plt.ion()
 
         # Creates Reference Lines
-        # if self.settings.control["optimiser"]:
-        #     soc_ref = plt.hlines(6, 0, 24, linestyles='dashed')
-        #     soc_ref.set_label('100% State of Charge')
-        # else:
-        #     ref_line = plt.hlines(self.settings.simulation["grid_ref"] / 1000, 0, 24, linestyles='dashed')
-        #     ref_line.set_label('Reference Grid Power')
-        #     soc_ref = plt.hlines(6, 0, 24, linestyles='dashed')
-        #     soc_ref.set_label('100% State of Charge')
+        if self.settings.control["optimiser"]:
+            soc_ref = plt.hlines(6, 0, 24, linestyles='dashed')
+            soc_ref.set_label('100% State of Charge')
+        else:
+            ref_line = plt.hlines(self.settings.simulation["grid_ref"] / 1000, 0, 24, linestyles='dashed')
+            ref_line.set_label('Reference Grid Power')
+            soc_ref = plt.hlines(6, 0, 24, linestyles='dashed')
+            soc_ref.set_label('100% State of Charge')
 
         # Initialises Line Graphs
         self.soc_line, = plt.plot([], [], '-o', alpha=0.8, c='y', markersize=2)

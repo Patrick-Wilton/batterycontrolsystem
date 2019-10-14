@@ -183,7 +183,7 @@ class ControlSystem:
         curr_time = self.current_time()
 
         # Checks if it has been 24 hours
-        if curr_time >= 24:
+        if abs(curr_time - 24) < 0.1:
             self.sub.day_count += 1
             self.pub.day_count += 1
             if self.settings.simulation["use_visualisation"]:
@@ -297,7 +297,12 @@ class ControlSystem:
             self.data_skip = self.sub.house_num - self.data_skip
             self.optimiser_index = 0 + self.data_skip
             self.prev_house_control = curr_time
+
+            # Print Outputs
             print('Optimiser skipped ' + str(self.data_skip) + ' time steps')
+            print('Total PV system money saved = $' + str(round(self.pub.house_import - self.pub.savings, 2)))
+            print('Additional money saved by battery = $' + str(round(self.pub.sol_savings - self.pub.savings, 2)))
+            print('Day counter = ' + str(self.sub.day_count))
 
         # True on each time step
         if self.data_mod and curr_time != self.prev_house_data:
@@ -314,6 +319,18 @@ class ControlSystem:
             self.prev_house_data = curr_time
 
             self.pub.update_data_store("grid", self.pub.grid, self.current_time())
+
+            # Savings Calculations
+            if self.pub.grid < 0:
+                self.pub.savings += (self.pub.grid/1000) * (self.time_step / 60) * self.export_tariff[0]
+            else:
+                self.pub.savings += (self.pub.grid/1000) * (self.time_step / 60) * self.import_tariff[0]
+            if self.pub.sol_grid < 0:
+                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
+            else:
+                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
+            self.pub.house_import += (self.sub.house_power / 1000) * (self.time_step / 60) * self.import_tariff[0]
+
             self.pub.update_data_store("bat", self.pub.bat_power, self.current_time())
             self.data_skip = 0
 
@@ -346,6 +363,18 @@ class ControlSystem:
         # True on each time step (Updates grid and power data)
         if self.data_mod and curr_time != self.prev_house_data:
             self.pub.update_data_store("grid", self.pub.grid, self.current_time())
+
+            # Savings Calculations
+            if self.pub.grid < 0:
+                self.pub.savings += (self.pub.grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
+            else:
+                self.pub.savings += (self.pub.grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
+            if self.pub.sol_grid < 0:
+                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
+            else:
+                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
+            self.pub.house_import += (self.sub.house_power / 1000) * (self.time_step / 60) * self.import_tariff[0]
+
             self.pub.update_data_store("bat", self.pub.bat_power, self.current_time())
 
         # Ensures control isn't applied twice on same condition met
@@ -355,8 +384,14 @@ class ControlSystem:
             self.pub.non_optimiser_control(self.sub.bat_SOC)
             self.prev_house_control = curr_time
 
+            # Print Outputs
+            print('Total PV system money saved = $' + str(round(self.pub.house_import - self.pub.savings, 2)))
+            print('Additional money saved by battery = $' + str(round(self.pub.sol_savings - self.pub.savings, 2)))
+            print('Day counter = ' + str(self.sub.day_count))
+
         # Publishes Value
         if self.data_mod and curr_time != self.prev_house_data:
+            self.update_24_data(self.data_skip)
             self.pub.publish_power()
             self.prev_house_data = curr_time
 

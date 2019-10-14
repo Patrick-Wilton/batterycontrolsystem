@@ -48,8 +48,8 @@ class Subscriber:
         self.data_store["house_plot"] = list()
 
         # Sets up Kalman Filters
-        self.solar_filter = KalmanFilter(1, 0, 1, 0, 1, 0.05, 1)
-        self.house_filter = KalmanFilter(1, 0, 1, 700, 1, 0.05, 1)
+        self.solar_filter = KalmanFilter(1, 0, 1, 0, 1, 0.2, 1)
+        self.house_filter = KalmanFilter(1, 0, 1, 700, 1, 0.2, 1)
 
         # Defines Sockets and Threads
         self.bat_socket = None
@@ -216,8 +216,12 @@ class Publisher:
         self.grid_num = 0
         self.bat_power = 0
         self.grid = 0
+        self.sol_grid = 0
         self.initial_time = 0
         self.day_count = 0
+        self.savings = 0
+        self.sol_savings = 0
+        self.house_import = 0
 
         # Non-Optimiser Control Settings
         self.grid_ref = self.settings.simulation["grid_ref"]
@@ -245,6 +249,7 @@ class Publisher:
 
     def set_grid(self, solar, house):
         self.grid = self.bat_power + solar + house
+        self.sol_grid = solar + house
 
     def update_data_store(self, device, power, house_time):
 

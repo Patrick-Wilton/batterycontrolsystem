@@ -29,8 +29,7 @@ class OptimiserObjectiveSet(object):
                           OptimiserObjective.GreedySolarCharging,
                           OptimiserObjective.GreedyLoadDischarging,
                           OptimiserObjective.Throughput,
-                          OptimiserObjective.EqualStorageActions,
-                          OptimiserObjective.ConnectionPointPeakPower]
+                          OptimiserObjective.EqualStorageActions]
 
     PeakOptimisation = [OptimiserObjective.ConnectionPointPeakPower,
                         OptimiserObjective.EqualStorageActions]

@@ -71,8 +71,8 @@ class Optimiser:
         self.pv_profile = PV()
 
         # Creates Tariffs
-        import_tariff = np.array(([0.1] * 84 + [0.3] * 24 + [0.2] * 96 + [0.3] * 48 + [0.1] * 36))  # MAGIC NUMS
-        export_tariff = np.array(([0.0] * 288))  # MAGIC NUMS
+        import_tariff = np.array(([0.2] * 84 + [0.3] * 24 + [0.2] * 96 + [0.3] * 48 + [0.2] * 36))  # MAGIC NUMS
+        export_tariff = np.array(([0.1] * 288))  # MAGIC NUMS
 
         self.import_tariff = dict(enumerate(import_tariff))
         self.export_tariff = dict(enumerate(export_tariff))

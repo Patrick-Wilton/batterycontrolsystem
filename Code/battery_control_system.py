@@ -143,18 +143,29 @@ class ControlSystem:
 
         # Sets Boolean Parameters
         self.control_mod = False
+        self.opt_mod = False
         self.data_mod = False
         self.initial_connect = False
         self.connected = False
+
+        # Total Energy
+        self.solar_energy = 0
+        self.house_energy = 0
 
         # Sets internal parameters
         self.mod_thresh = 0.002
         self.optimiser_index = 0
         self.data_skip = 0
+        self.covariance = 0.3
+        self.power_cov = 0.5
+        self.power_scale = self.settings.control["power_covariance"]
         self.prev_house_data = None
         self.prev_house_control = None
+        self.prev_house_opt = None
+        self.prev_house_day = None
         self.time_step = self.settings.control["data_time_step"]
         self.control_step = self.settings.control["control_time_step"]
+        self.opt_step = self.settings.control["optimiser_time_step"]
 
         # Creates 24 hour data stores and filters
         self.power = None
@@ -165,6 +176,7 @@ class ControlSystem:
 
         self.load_filter = None
         self.pv_filter = None
+        self.power_filter = KalmanFilter(1, 0, 1, 0, 1, self.power_cov, 1)
 
     def current_time(self):
 
@@ -182,12 +194,43 @@ class ControlSystem:
         # Obtains the current time
         curr_time = self.current_time()
 
+        # Obtains current house time
+        if bool(self.sub.data_store["house_time"]) is False:
+            curr_house_time = 0
+        else:
+            curr_house_time = self.sub.data_store["house_time"][-1]
+
+        if 1 < curr_time < 23:
+            self.prev_house_day = None
+
         # Checks if it has been 24 hours
-        if abs(curr_time - 24) < 0.1:
+        if abs(curr_time - 24) < 0.1 and curr_house_time != self.prev_house_day:
             self.sub.day_count += 1
             self.pub.day_count += 1
             if self.settings.simulation["use_visualisation"]:
                 self.plot.day_count += 1
+            self.prev_house_day = curr_house_time
+
+    def calculate_savings(self):
+
+        # Energy Totals
+        self.solar_energy += (self.sub.solar_power / 1000) * (self.time_step / 60)
+        self.house_energy += (self.sub.house_power / 1000) * (self.time_step / 60)
+
+        # Total Savings
+        if self.pub.grid < 0:
+            self.pub.savings += (self.pub.grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
+        else:
+            self.pub.savings += (self.pub.grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
+
+        # Battery Exclusive Savings
+        if self.pub.sol_grid < 0:
+            self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
+        else:
+            self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
+
+        # No PV System Cost
+        self.pub.house_import += (self.sub.house_power / 1000) * (self.time_step / 60) * self.import_tariff[0]
 
     def update_24_data(self, data_skip):
 
@@ -196,8 +239,8 @@ class ControlSystem:
 
             for i in reversed(range(0, data_skip + 1)):
                 # Create Filters
-                self.load_filter = KalmanFilter(1, 0, 1, self.load[0], 1, 0.05, 1)
-                self.pv_filter = KalmanFilter(1, 0, 1, self.pv[0], 1, 0.05, 1)
+                self.load_filter = KalmanFilter(1, 0, 1, self.load[0], 1, self.covariance, 1)
+                self.pv_filter = KalmanFilter(1, 0, 1, self.pv[0], 1, self.covariance, 1)
 
                 # Apply Filters
                 self.load_filter.step(0, self.sub.data_store["house_value"][-(i + 1)] / (60 / self.time_step))
@@ -269,9 +312,14 @@ class ControlSystem:
 
         # True every control time step
         curr_control_mod = curr_time % (self.control_step / 60)
-        self.control_mod = curr_control_mod < self.mod_thresh or (self.control_step / 60) - curr_control_mod < self.mod_thresh
+        self.control_mod = curr_control_mod < self.mod_thresh or (
+                    self.control_step / 60) - curr_control_mod < self.mod_thresh
 
-        # Runs if event based publishing is OFF
+        # True on every optimiser time step
+        curr_opt_mod = curr_time % (self.opt_step / 60)
+        self.opt_mod = curr_opt_mod < self.mod_thresh or (
+                    self.opt_step / 60) - curr_opt_mod < self.mod_thresh
+
         if all_read:
 
             # Applies Control if necessary
@@ -282,119 +330,6 @@ class ControlSystem:
             self.sub.solar_read = 0
             self.sub.house_read = 0
 
-    def optimiser_control(self, curr_time):
-
-        # Calculates new grid value
-        self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
-
-        # Ensures control isn't applied twice on same condition met
-        if self.control_mod and curr_time != self.prev_house_control:
-
-            # Applies Control
-            self.data_skip = self.sub.house_num
-            self.optimiser.optimise()
-            self.power = list(self.optimiser.return_battery_power())
-            self.data_skip = self.sub.house_num - self.data_skip
-            self.optimiser_index = 0 + self.data_skip
-            self.prev_house_control = curr_time
-
-            # Print Outputs
-            print('Optimiser skipped ' + str(self.data_skip) + ' time steps')
-            print('Total PV system money saved = $' + str(round(self.pub.house_import - self.pub.savings, 2)))
-            print('Additional money saved by battery = $' + str(round(self.pub.sol_savings - self.pub.savings, 2)))
-            print('Day counter = ' + str(self.sub.day_count))
-
-        # True on each time step
-        if self.data_mod and curr_time != self.prev_house_data:
-
-            # Sets new power
-            if bool(self.power):
-                self.pub.set_power(self.power[self.optimiser_index] * 1000 * (60 / self.time_step))
-            else:
-                self.pub.set_power(0)
-
-            # Updates optimiser index and data
-            self.optimiser_index += 1
-            self.update_24_data(self.data_skip)
-            self.prev_house_data = curr_time
-
-            self.pub.update_data_store("grid", self.pub.grid, self.current_time())
-
-            # Savings Calculations
-            if self.pub.grid < 0:
-                self.pub.savings += (self.pub.grid/1000) * (self.time_step / 60) * self.export_tariff[0]
-            else:
-                self.pub.savings += (self.pub.grid/1000) * (self.time_step / 60) * self.import_tariff[0]
-            if self.pub.sol_grid < 0:
-                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
-            else:
-                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
-            self.pub.house_import += (self.sub.house_power / 1000) * (self.time_step / 60) * self.import_tariff[0]
-
-            self.pub.update_data_store("bat", self.pub.bat_power, self.current_time())
-            self.data_skip = 0
-
-            # Publishes power
-            self.pub.publish_power()
-
-    def gather_prediction(self, curr_time):
-        # Calculates new grid value
-        self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
-
-        # True on each time step (Updates grid and power data)
-        if self.data_mod and curr_time != self.prev_house_data:
-            self.pub.update_data_store("grid", self.pub.grid, self.current_time())
-            self.pub.update_data_store("bat", self.pub.bat_power, self.current_time())
-
-        # Updates data and publishes power
-        self.pub.set_power(0)
-
-        # True on each time step
-        if self.data_mod and curr_time != self.prev_house_data:
-            # Updates data and publishes power
-            self.update_24_data(self.data_skip)
-            self.prev_house_data = curr_time
-            self.pub.publish_power()
-
-    def non_optimiser_control(self, curr_time):
-        # Calculates new grid value
-        self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
-
-        # True on each time step (Updates grid and power data)
-        if self.data_mod and curr_time != self.prev_house_data:
-            self.pub.update_data_store("grid", self.pub.grid, self.current_time())
-
-            # Savings Calculations
-            if self.pub.grid < 0:
-                self.pub.savings += (self.pub.grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
-            else:
-                self.pub.savings += (self.pub.grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
-            if self.pub.sol_grid < 0:
-                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.export_tariff[0]
-            else:
-                self.pub.sol_savings += (self.pub.sol_grid / 1000) * (self.time_step / 60) * self.import_tariff[0]
-            self.pub.house_import += (self.sub.house_power / 1000) * (self.time_step / 60) * self.import_tariff[0]
-
-            self.pub.update_data_store("bat", self.pub.bat_power, self.current_time())
-
-        # Ensures control isn't applied twice on same condition met
-        if self.control_mod and curr_time != self.prev_house_control:
-
-            # Applies Control
-            self.pub.non_optimiser_control(self.sub.bat_SOC)
-            self.prev_house_control = curr_time
-
-            # Print Outputs
-            print('Total PV system money saved = $' + str(round(self.pub.house_import - self.pub.savings, 2)))
-            print('Additional money saved by battery = $' + str(round(self.pub.sol_savings - self.pub.savings, 2)))
-            print('Day counter = ' + str(self.sub.day_count))
-
-        # Publishes Value
-        if self.data_mod and curr_time != self.prev_house_data:
-            self.update_24_data(self.data_skip)
-            self.pub.publish_power()
-            self.prev_house_data = curr_time
-
     def apply_control(self):
 
         # Obtains current house time
@@ -403,33 +338,93 @@ class ControlSystem:
         else:
             curr_time = self.sub.data_store["house_time"][-1]
 
-        # Runs optimiser control
-        if self.settings.control["optimiser"]:
-            if len(self.load) == (60 / self.time_step) * 24:
-                self.optimiser_control(curr_time)
-            else:
-                self.gather_prediction(curr_time)
+        # Calculates new grid value
+        self.pub.set_grid(self.sub.solar_power, self.sub.house_power)
 
-        # Runs non-optimiser control
-        else:
-            self.non_optimiser_control(curr_time)
+        # PV Self Consumption Control
+        if self.settings.control["pv_self_cons"]:
+            if self.control_mod and curr_time != self.prev_house_control:
+
+                # Applies Control
+                self.pub.non_optimiser_control(self.sub.bat_SOC)
+                self.prev_house_control = curr_time
+
+        # Optimiser Control
+        if self.settings.control["optimiser"] and len(self.load) == (60 / self.time_step) * 24:
+            if self.opt_mod and curr_time != self.prev_house_opt:
+                # Applies Control
+                self.data_skip = self.sub.house_num
+                self.optimiser.optimise()
+                self.power = list(self.optimiser.return_battery_power())
+                self.data_skip = self.sub.house_num - self.data_skip
+                self.optimiser_index = 0 + self.data_skip
+                self.prev_house_opt = curr_time
+
+        # Data Time Step
+        if self.data_mod and curr_time != self.prev_house_data:
+
+            # Print Outputs
+            print('Optimiser skipped ' + str(self.data_skip) + ' time steps')
+            print('Total PV system money saved = $' + str(round(self.pub.house_import - self.pub.savings, 2)))
+            print('Additional money saved by battery = $' + str(round(self.pub.sol_savings - self.pub.savings, 2)))
+            print('Total cost of load import = $' + str(round(self.pub.house_import, 2)))
+            print('Total load energy = ' + str(round(self.house_energy, 2)) + ' kWh')
+            print('Total solar energy = ' + str(round(self.solar_energy, 2)) + ' kWh')
+            print('Day counter = ' + str(self.sub.day_count))
+
+            # Sets new power value
+            if self.settings.control["pv_self_cons"] and self.settings.control["optimiser"]:
+                if bool(self.power):
+                    opt_power = self.power[self.optimiser_index] * 1000 * (60 / self.time_step)
+                    opt_power = self.power_scale * opt_power + (1 - self.power_scale) * self.pub.bat_power
+                    self.power_filter.step(0, opt_power)
+                    self.pub.set_power(self.power_filter.current_state())
+                else:
+                    self.pub.set_power(0)
+            if self.settings.control["optimiser"] and self.settings.control["pv_self_cons"] is False:
+                if bool(self.power):
+                    opt_power = self.power[self.optimiser_index] * 1000 * (60 / self.time_step)
+                    self.pub.set_power(opt_power)
+                else:
+                    self.pub.set_power(0)
+
+            # Updates optimiser index and 24 hour data
+            if self.settings.control["optimiser"]:
+                self.optimiser_index += 1
+            self.update_24_data(self.data_skip)
+            self.prev_house_data = curr_time
+
+            # Updates data stores and optimiser skips
+            self.pub.update_data_store("grid", self.pub.grid, self.current_time())
+            self.pub.update_data_store("bat", self.pub.bat_power, self.current_time())
+            self.data_skip = 0
+
+            # Calculates Savings
+            self.calculate_savings()
+
+            # Publishes power
+            self.pub.publish_power()
 
 
 if __name__ == '__main__':
 
-    # Reads settings configuration file
+    # Reads settings configuration file and starts drivers
     settings = Settings()
     control = ControlSystem(settings)
     drivers = SunSpecDriver(settings)
 
+    # CONNECTION LOOP
     print('Connecting')
     control.connection_loop()
 
-    print('Starting Control System')
     # MAIN LOOP
+    print('Starting Control System')
     while True:
+
+        # Control System Main Loop
         control.main_loop()
 
+        # Data Visualisation
         if settings.simulation["use_visualisation"]:
             control.plot.update_erase_index(control.sub.data_store["house_time"],
                                             control.sub.soc_num,
@@ -439,4 +434,11 @@ if __name__ == '__main__':
                                             control.pub.bat_num)
 
             control.plot.update_plot(control.sub.data_store, control.pub.data_store)
+
+        # Testing Break Condition
+        if control.sub.day_count == 7:
+            plt.savefig(r"C:\Users\Owner\PycharmProjects\batterycontrolsystem\Test Results\Data Set 2\15kWh_PVSC.png")
+            break
+
+
 

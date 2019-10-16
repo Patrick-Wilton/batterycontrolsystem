@@ -38,7 +38,7 @@ ZeroMQ:
 
 # Physical battery characteristics
 battery:
-  max_capacity: 6
+  max_capacity: 15 # kWh
   DOD_limit: 0
   charging_power_limit: 5.0
   discharging_power_limit: -5.0
@@ -62,14 +62,34 @@ simulation:
 
 # Control system settings
 control:
-  control_time_step: 60 # minutes
+  control_time_step: 5 # minutes
+  optimiser_time_step: 20 # minutes
   data_time_step: 5 # minutes
   solar_filtering: yes
+  solar_cov: 0.4
   house_filtering: yes
+  house_cov: 0.4
   battery_filtering: no
-  optimiser: yes
+  bat_cov: 0.05
+  optimiser: no
+  pv_self_cons: yes
+  power_covariance: 0.5
   initial_optimiser_prediction: yes
   data_file_name: one_day_export.csv
   solar_row_name: asolarp
   house_row_name: aloadp
-  objective: Peak
+  objective: FEP
+
+# Tariff pricing settings
+tariff:
+  use_fixed_rate: no
+  fixed_rate: 0.27 # $/kWh
+  peak_rate: 0.45 # $/kWh
+  shoulder_rate: 0.35 # $/kWh
+  off_peak_rate: 0.15 # $/kWh
+  feed_in: 0.09 # $/kWh
+  off_peak_time_morn: 7 # hours
+  shoulder_time_morn: 7 # hours
+  peak_time: 6 # hours
+  shoulder_time_eve: 2 # hours
+  off_peak_time_eve: 2 # hours

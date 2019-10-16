@@ -71,8 +71,29 @@ class Optimiser:
         self.pv_profile = PV()
 
         # Creates Tariffs
-        import_tariff = np.array(([0.2] * 84 + [0.3] * 24 + [0.2] * 96 + [0.3] * 48 + [0.2] * 36))  # MAGIC NUMS
-        export_tariff = np.array(([0.1] * 288))  # MAGIC NUMS
+        dt = int(60 / self.time_step)
+
+        peak_rate = self.settings.tariff["peak_rate"]
+        shoulder_rate = self.settings.tariff["shoulder_rate"]
+        off_peak_rate = self.settings.tariff["off_peak_rate"]
+        feed_in = self.settings.tariff["feed_in"]
+        fixed_rate = self.settings.tariff["fixed_rate"]
+
+        off_peak_time_morn = self.settings.tariff["off_peak_time_morn"]
+        shoulder_time_morn = self.settings.tariff["shoulder_time_morn"]
+        peak_time = self.settings.tariff["peak_time"]
+        shoulder_time_eve = self.settings.tariff["shoulder_time_eve"]
+        off_peak_time_eve = self.settings.tariff["off_peak_time_eve"]
+
+        if self.settings.tariff["use_fixed_rate"]:
+            import_tariff = np.array(([fixed_rate] * (dt * 24)))
+        else:
+            import_tariff = np.array(([off_peak_rate] * off_peak_time_morn * dt
+                                      + [shoulder_rate] * shoulder_time_morn * dt
+                                      + [peak_rate] * peak_time * dt
+                                      + [shoulder_rate] * shoulder_time_eve * dt
+                                      + [off_peak_rate] * off_peak_time_eve * dt))
+        export_tariff = np.array(([feed_in] * (dt * 24)))
 
         self.import_tariff = dict(enumerate(import_tariff))
         self.export_tariff = dict(enumerate(export_tariff))
@@ -101,6 +122,8 @@ class Optimiser:
             self.objective = OptimiserObjectiveSet.EnergyOptimisation
         elif self.settings.control["objective"] == "Peak":
             self.objective = OptimiserObjectiveSet.PeakOptimisation
+        elif self.settings.control["objective"] == "FEP":
+            self.objective = OptimiserObjectiveSet.FEP
         elif self.settings.control["objective"] == "QuantisedPeak":
             self.objective = OptimiserObjectiveSet.QuantisedPeakOptimisation
         elif self.settings.control["objective"] == "Dispatch":
@@ -111,8 +134,8 @@ class Optimiser:
     def update_profiles(self, load, pv, imp, exp, soc):
         self.load_profile.add_load_profile(load)
         self.pv_profile.add_pv_profile(pv)
-        self.tariff_profile.add_tariff_profile_import(imp)
-        self.tariff_profile.add_tariff_profile_export(exp)
+        self.tariff_profile.add_tariff_profile_import(dict(enumerate(imp)))
+        self.tariff_profile.add_tariff_profile_export(dict(enumerate(exp)))
         self.battery.initial_state_of_charge = soc / (100 / self.battery.max_capacity)
 
     def update_energy_system(self):

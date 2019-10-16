@@ -7,6 +7,7 @@ import pandas as pd
 
 # Define some useful container objects to define the optimisation objectives
 
+
 class OptimiserObjective(object):
     ConnectionPointCost = 1
     ConnectionPointEnergy = 2
@@ -18,9 +19,10 @@ class OptimiserObjective(object):
     ConnectionPointPeakPower = 8
     ConnectionPointQuantisedPeak = 9
     PiecewiseLinear = 10
-    
+
+
 class OptimiserObjectiveSet(object):
-    FinancialOptimisation = [#OptimiserObjective.ConnectionPointCost,
+    FinancialOptimisation = [OptimiserObjective.ConnectionPointCost,
                              OptimiserObjective.GreedySolarCharging,
                              OptimiserObjective.ThroughputCost,
                              OptimiserObjective.EqualStorageActions]
@@ -34,14 +36,26 @@ class OptimiserObjectiveSet(object):
     PeakOptimisation = [OptimiserObjective.ConnectionPointPeakPower,
                         OptimiserObjective.EqualStorageActions]
 
+    FEP = [OptimiserObjective.ConnectionPointCost,
+           OptimiserObjective.GreedySolarCharging,
+           OptimiserObjective.ThroughputCost,
+           OptimiserObjective.EqualStorageActions,
+           OptimiserObjective.ConnectionPointEnergy,
+           OptimiserObjective.GreedySolarCharging,
+           OptimiserObjective.GreedyLoadDischarging,
+           OptimiserObjective.Throughput,
+           OptimiserObjective.ConnectionPointPeakPower]
+
     QuantisedPeakOptimisation = [OptimiserObjective.ConnectionPointQuantisedPeak]
 
     DispatchOptimisation = [OptimiserObjective.PiecewiseLinear] + FinancialOptimisation
+
 
 # Define some useful constants
 minutes_per_hour = 60.0
 
 ####################################################################
+
 
 class EnergyOptimiser(object):
     
@@ -70,7 +84,6 @@ class EnergyOptimiser(object):
         self.build_objective()
         self.optimise()
 
-        
     def build_model(self):
         # Set up the Pyomo model
         self.model = en.ConcreteModel()
@@ -238,7 +251,6 @@ class EnergyOptimiser(object):
             self.model.B3 = en.Constraint(self.model.my_set, rule=B3)
             self.model.B4 = en.Constraint(self.model.my_set, rule=B4)'''
 
-
     def apply_constraints(self):
 
         # Calculate the increased state of charge of the energy storage from the
@@ -346,7 +358,6 @@ class EnergyOptimiser(object):
             self.model.bcdr_four = en.Constraint(self.model.Time, rule=bool_cd_rule_four)
             self.model.bcdr_five = en.Constraint(self.model.Time, rule=bool_cd_rule_five)
 
-
     def build_objective(self):
         # Build the objective function ready for optimisation
         objective = 0
@@ -402,7 +413,6 @@ class EnergyOptimiser(object):
             # ToDo - More work is needed to convert this into a demand tariff objective (i.e. a cost etc.)
             objective += self.model.peak_connection_point_import_power + self.model.peak_connection_point_export_power
 
-
         if OptimiserObjective.ConnectionPointQuantisedPeak in self.objectives:
             # ToDo - What is this objective function? Quantises the Connection point?
             objective += sum(self.model.net_export[i] * self.model.net_export[i] +
@@ -419,7 +429,6 @@ class EnergyOptimiser(object):
 
         self.model.total_cost = en.Objective(rule=objective_function, sense=en.minimize)
 
-
     def optimise(self):
         # set the path to the solver
         if self.optimiser_engine == 'cplex':
@@ -429,3 +438,4 @@ class EnergyOptimiser(object):
 
         # Solve the optimisation
         self.results = opt.solve(self.model)
+

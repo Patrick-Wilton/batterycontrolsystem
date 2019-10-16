@@ -48,8 +48,10 @@ class Subscriber:
         self.data_store["house_plot"] = list()
 
         # Sets up Kalman Filters
-        self.solar_filter = KalmanFilter(1, 0, 1, 0, 1, 0.2, 1)
-        self.house_filter = KalmanFilter(1, 0, 1, 700, 1, 0.2, 1)
+        self.solar_cov = self.settings.control["solar_cov"]
+        self.solar_filter = KalmanFilter(1, 0, 1, 0, 1, self.solar_cov, 1)
+        self.house_cov = self.settings.control["house_cov"]
+        self.house_filter = KalmanFilter(1, 0, 1, 700, 1, self.house_cov, 1)
 
         # Defines Sockets and Threads
         self.bat_socket = None
@@ -228,7 +230,8 @@ class Publisher:
         self.grid_control_dir = self.settings.simulation["control_dir"]
 
         # Sets up Kalman Filters
-        self.battery_filter = KalmanFilter(1, 0, 1, 0, 1, 0.05, 1)
+        self.bat_cov = self.settings.control["bat_cov"]
+        self.battery_filter = KalmanFilter(1, 0, 1, 0, 1, self.bat_cov, 1)
 
         # Creates Internal Data Store
         self.data_store = dict()

@@ -78,7 +78,7 @@ control:
   data_file_name: one_day_export.csv
   solar_row_name: asolarp
   house_row_name: aloadp
-  objective: FEP
+  objective: FEP # Valid Objectives: Financial, Energy, Peak, FEP, QuantisedPeak, Dispatch
 
 # Tariff pricing settings
 tariff:
@@ -88,8 +88,8 @@ tariff:
   shoulder_rate: 0.35 # $/kWh
   off_peak_rate: 0.15 # $/kWh
   feed_in: 0.09 # $/kWh
-  off_peak_time_morn: 7 # hours
-  shoulder_time_morn: 7 # hours
-  peak_time: 6 # hours
-  shoulder_time_eve: 2 # hours
-  off_peak_time_eve: 2 # hours
+  off_peak_time_morn: 0 # hours (default = 7)
+  shoulder_time_morn: 3 # hours (default = 7)
+  peak_time: 7 # hours (default = 6)
+  shoulder_time_eve: 6 # hours (default = 2)
+  off_peak_time_eve: 8 # hours (default = 2)

@@ -129,7 +129,8 @@ class Optimiser:
         elif self.settings.control["objective"] == "Dispatch":
             self.objective = OptimiserObjectiveSet.DispatchOptimisation
         else:
-            print('not a setting')
+            print('Not a Valid Objective Setting\nSee Config File for Valid Settings')
+            raise KeyError
 
     def update_profiles(self, load, pv, imp, exp, soc):
         self.load_profile.add_load_profile(load)

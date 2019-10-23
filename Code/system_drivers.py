@@ -11,7 +11,7 @@ from sunspec.core.client import ClientDevice
 
 class Event:
     def __init__(self):
-        self.events = {}
+        self.events = dict()
 
     def wait(self):
         identifier = get_ident()
@@ -43,6 +43,7 @@ class SunSpecDriver:
         self.settings = config_settings
 
         # Connecting SunSpec Clients
+        print(self.settings.server["battery"]["ipaddr"])
         self.battery_client = ClientDevice(device_type=self.settings.server["battery"]["device_type"],
                                            slave_id=self.settings.server["battery"]["slave_id"],
                                            ipaddr=self.settings.server["battery"]["ipaddr"],

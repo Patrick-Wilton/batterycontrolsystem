@@ -437,7 +437,7 @@ if __name__ == '__main__':
 
         # Testing Break Condition
         if control.sub.day_count == 7:
-            plt.savefig(r"C:\Users\Owner\PycharmProjects\batterycontrolsystem\Test Results\Data Set 2\15kWh_PVSC.png")
+            plt.savefig(r"C:\Users\Owner\PycharmProjects\batterycontrolsystem\Test Results\Data Set 3\15kWh_PVSC.png")
             break
 
 

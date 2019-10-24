@@ -49,7 +49,7 @@ battery:
 
 # Simulation specific settings
 simulation:
-  data_file_name: data_input.csv
+  data_file_name: random_data_set.csv
   solar_row_name: asolarp
   house_row_name: aloadp
   time_step: 5 # minutes
@@ -82,14 +82,14 @@ control:
 
 # Tariff pricing settings
 tariff:
-  use_fixed_rate: no
+  use_fixed_rate: yes
   fixed_rate: 0.27 # $/kWh
   peak_rate: 0.45 # $/kWh
   shoulder_rate: 0.35 # $/kWh
   off_peak_rate: 0.15 # $/kWh
   feed_in: 0.09 # $/kWh
-  off_peak_time_morn: 0 # hours (default = 7)
-  shoulder_time_morn: 3 # hours (default = 7)
-  peak_time: 7 # hours (default = 6)
-  shoulder_time_eve: 6 # hours (default = 2)
-  off_peak_time_eve: 8 # hours (default = 2)
+  off_peak_time_morn: 7 # hours (default = 7)
+  shoulder_time_morn: 7 # hours (default = 7)
+  peak_time: 6 # hours (default = 6)
+  shoulder_time_eve: 2 # hours (default = 2)
+  off_peak_time_eve: 2 # hours (default = 2)

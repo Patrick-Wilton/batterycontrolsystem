@@ -1,1 +1,0 @@
-# ENOMO (ENergy Output Model Optimiser)

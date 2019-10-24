@@ -1,3 +1,5 @@
+# Server Reading and Writing Capabilities enabled by Open Source 'pysunspec' managed by SunSpec Alliance
+# pub-sub capabilities provided by 'pyzmq', Python handler of ZeroMQ protocols
 
 import struct
 import threading

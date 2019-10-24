@@ -1,3 +1,8 @@
+"""
+This is a draft script and is not the full version of the optimiser,
+it still remains the property of the Australian National University's Battery Storage and Grid Integration Program
+"""
+
 from pyomo.opt import SolverFactory
 import pyomo.environ as en
 import numpy as np

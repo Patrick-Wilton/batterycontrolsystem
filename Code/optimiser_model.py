@@ -165,6 +165,3 @@ class Optimiser:
         storage_energy_delta = self.output_vars[3] + self.output_vars[4] + self.output_vars[5] + self.output_vars[6]
         return storage_energy_delta
 
-
-
-

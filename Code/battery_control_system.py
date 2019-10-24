@@ -435,10 +435,8 @@ if __name__ == '__main__':
 
             control.plot.update_plot(control.sub.data_store, control.pub.data_store)
 
-        # Testing Break Condition
-        if control.sub.day_count == 7:
-            plt.savefig(r"C:\Users\Owner\PycharmProjects\batterycontrolsystem\Test Results\Data Set 3\15kWh_PVSC.png")
-            break
-
-
+        # Example Testing Break Condition
+        # if control.sub.day_count == 7:
+        #     plt.savefig(r"C:\Users\Owner\PycharmProjects\batterycontrolsystem\Test Results\Fixed Rate\15kWh_PVSC.png")
+        #     break
 
